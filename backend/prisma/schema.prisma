@@ -1,0 +1,143 @@
+// ============================================================
+// Prisma Schema — AI-Integrated Geospatial Travel Journal
+// ============================================================
+// This schema covers all 5 tables defined in the PRDs.
+//
+// PostGIS note:
+//   The `geom` column uses Unsupported("geometry(Point, 4326)")
+//   because Prisma has no native PostGIS support.
+//   Raw SQL is used for:
+//     1. Creating/updating geom: ST_SetSRID(ST_MakePoint(lng, lat), 4326)
+//     2. Spatial queries: ST_Intersects + ST_MakeEnvelope (bounding box)
+//     3. GIST index on geom (created in migration SQL)
+//     4. Functional index on LOWER(username) (created in migration SQL)
+//
+// After running `prisma migrate dev`, apply the PostGIS migration:
+//   See file: prisma/migrations/00_postgis_setup.sql
+//
+// CASCADE chain:
+//   Delete User → CASCADE → Delete all user's Posts → CASCADE → Delete all post_images
+// ============================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+// ============================================================
+// 1. USERS (PRD 1 — Authentication)
+// ============================================================
+model User {
+  id            Int      @id @default(autoincrement())
+  email         String   @unique @db.VarChar(255)
+  username      String   @unique @db.VarChar(20)
+  password_hash String   @db.VarChar(255)
+  created_at    DateTime @default(now()) @db.Timestamptz()
+  updated_at    DateTime @updatedAt @db.Timestamptz()
+
+  // Relations
+  posts Post[]
+
+  // Indexes
+  // - email: UNIQUE (automatic from @unique)
+  // - username: UNIQUE (automatic from @unique)
+  // - LOWER(username) functional index: created in raw SQL migration
+  // - created_at: for timestamp queries
+  @@index([created_at])
+  @@map("users")
+}
+
+// ============================================================
+// 2. POSTS (PRD 3 — Post Management)
+// ============================================================
+model Post {
+  id            Int      @id @default(autoincrement())
+  user_id       Int
+  title         String   @db.VarChar(100)
+  content       String   @db.Text
+  latitude      Float    @db.DoublePrecision
+  longitude     Float    @db.DoublePrecision
+  location_name String   @db.VarChar(500)
+  city          String?  @db.VarChar(100)
+  country       String?  @db.VarChar(100)
+  sentiment     String   @db.VarChar(20)
+  privacy       String   @db.VarChar(20)
+  created_at    DateTime @default(now()) @db.Timestamptz()
+  updated_at    DateTime @updatedAt @db.Timestamptz()
+
+  // PostGIS geometry column — managed via raw SQL trigger
+  // ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
+  // Note: PostGIS uses (longitude, latitude) order, not (lat, lng)
+  geom Unsupported("geometry(Point, 4326)")?
+
+  // Relations
+  // CASCADE: deleting a user deletes all their posts
+  user   User        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  // CASCADE: deleting a post deletes all its images
+  images PostImage[]
+
+  // Indexes
+  // - user_id: for fetching user's posts
+  // - created_at: for sorting (ORDER BY created_at DESC)
+  // - GIST index on geom: created in raw SQL migration
+  @@index([user_id])
+  @@index([created_at])
+  @@map("posts")
+}
+
+// ============================================================
+// 3. POST IMAGES (PRD 3 — Image Management)
+// ============================================================
+model PostImage {
+  id            Int      @id @default(autoincrement())
+  post_id       Int
+  secure_url    String   @db.VarChar(500)
+  public_id     String   @unique @db.VarChar(200)
+  display_order Int      @default(0)
+  created_at    DateTime @default(now()) @db.Timestamptz()
+
+  // Relations — CASCADE delete when post is deleted
+  post Post @relation(fields: [post_id], references: [id], onDelete: Cascade)
+
+  // Index on post_id for fetching images by post
+  @@index([post_id])
+  @@map("post_images")
+}
+
+// ============================================================
+// 4. GEOCODE CACHE (PRD 2 — Geocoding)
+// ============================================================
+model GeocodeCache {
+  id           Int      @id @default(autoincrement())
+  cache_key    String   @db.VarChar(500)
+  cache_type   String   @db.VarChar(20)
+  results_json Json     @db.JsonB
+  created_at   DateTime @default(now()) @db.Timestamptz()
+
+  // Unique constraint: one entry per (cache_key, cache_type)
+  // cache_type CHECK constraint: created in raw SQL migration
+  @@unique([cache_key, cache_type])
+  @@index([cache_key, cache_type, created_at])
+  @@index([created_at])
+  @@map("geocode_cache")
+}
+
+// ============================================================
+// 5. AI CONTENT CACHE (PRD 4 — AI Integration)
+// ============================================================
+model AiContentCache {
+  id           Int      @id @default(autoincrement())
+  location_key String   @unique @db.VarChar(500)
+  content      String   @db.Text
+  created_at   DateTime @default(now()) @db.Timestamptz()
+
+  // Index on created_at for TTL cleanup
+  @@index([created_at])
+  @@map("ai_content_cache")
+}
