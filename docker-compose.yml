@@ -1,0 +1,29 @@
+# Local PostgreSQL + PostGIS for development
+# Run:   docker compose up -d
+# Stop:  docker compose down
+# Reset: docker compose down -v
+
+name: tjx-devstack
+
+services:
+  geo_db:
+    image: postgis/postgis:16-3.4
+    container_name: tjx-geo-postgis
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tjx_admin
+      POSTGRES_PASSWORD: tjx_admin_pwd
+      POSTGRES_DB: tjx_travel_journal
+    ports:
+      # Host port -> Container port
+      - "5434:5432"
+    volumes:
+      - tjx_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tjx_admin -d tjx_travel_journal"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  tjx_pgdata:
