@@ -1,3 +1,4 @@
+-- backend/prisma/sql/00_postgis_setup.sql
 -- ============================================================
 -- PostGIS & Custom SQL Migration (fully idempotent)
 -- ============================================================
@@ -7,61 +8,102 @@
 --
 -- Handles what Prisma cannot manage natively:
 --   1. PostGIS extension
---   2. geom column
---   3. Trigger to auto-compute geom from lat/lng
---   4. Backfill geom + enforce NOT NULL
---   5. GIST spatial index on geom
+--   2. geog column (geography(Point, 4326))
+--   3. Trigger to auto-compute geog from lat/lng
+--   4. Backfill geog + enforce NOT NULL
+--   5. GIST spatial index on geog
 --   6. CHECK constraints on posts (sentiment, privacy)
 --   7. CHECK constraint on geocode_cache (cache_type)
 --   8. Functional index on LOWER(username)
 --   9. GIN index on geocode_cache.results_json
 --  10. DEFAULT now() for updated_at (for raw SQL inserts)
 --  11. DB trigger for updated_at on UPDATE (DB-side safety)
+--  12. (Extra safety) lat/lng range checks
 -- ============================================================
 
 -- 1) Enable PostGIS extension
 CREATE EXTENSION IF NOT EXISTS postgis;
 
 -- ============================================================
--- 2) Ensure geom column exists on posts
+-- 2) Ensure geog column exists on posts (geography)
 -- ============================================================
 ALTER TABLE posts
-  ADD COLUMN IF NOT EXISTS geom geometry(Point, 4326);
+  ADD COLUMN IF NOT EXISTS geog geography(Point, 4326);
 
 -- ============================================================
--- 3) Trigger to auto-compute geom from latitude/longitude
+-- 3) Trigger to auto-compute geog from latitude/longitude (bulletproof)
 -- ============================================================
-CREATE OR REPLACE FUNCTION posts_update_geom()
+CREATE OR REPLACE FUNCTION posts_update_geog()
 RETURNS TRIGGER AS $$
 BEGIN
-  NEW.geom := ST_SetSRID(ST_MakePoint(NEW.longitude, NEW.latitude), 4326);
+  -- Fail fast: prevents silent bad data and prevents NOT NULL issues later.
+  IF NEW.longitude IS NULL OR NEW.latitude IS NULL THEN
+    RAISE EXCEPTION 'posts.longitude and posts.latitude must not be NULL';
+  END IF;
+
+  -- Extra strictness: ensure valid ranges
+  IF NEW.latitude < -90 OR NEW.latitude > 90 THEN
+    RAISE EXCEPTION 'posts.latitude out of range: %', NEW.latitude;
+  END IF;
+
+  IF NEW.longitude < -180 OR NEW.longitude > 180 THEN
+    RAISE EXCEPTION 'posts.longitude out of range: %', NEW.longitude;
+  END IF;
+
+  -- PostGIS uses (longitude, latitude) order
+  NEW.geog := ST_SetSRID(ST_MakePoint(NEW.longitude, NEW.latitude), 4326)::geography;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_posts_update_geom ON posts;
+DROP TRIGGER IF EXISTS trg_posts_update_geog ON posts;
 
-CREATE TRIGGER trg_posts_update_geom
+CREATE TRIGGER trg_posts_update_geog
   BEFORE INSERT OR UPDATE OF latitude, longitude
   ON posts
   FOR EACH ROW
-  EXECUTE FUNCTION posts_update_geom();
+  EXECUTE FUNCTION posts_update_geog();
 
 -- ============================================================
--- 4) Backfill geom, then enforce NOT NULL
+-- 4) Backfill geog, then enforce NOT NULL
 -- ============================================================
 UPDATE posts
-  SET geom = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
-  WHERE geom IS NULL;
+  SET geog = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography
+  WHERE geog IS NULL;
 
 ALTER TABLE posts
-  ALTER COLUMN geom SET NOT NULL;
+  ALTER COLUMN geog SET NOT NULL;
 
 -- ============================================================
--- 5) GIST Spatial Index on posts.geom
+-- 5) GIST Spatial Index on posts.geog
 -- ============================================================
-CREATE INDEX IF NOT EXISTS idx_posts_geom
-  ON posts USING GIST (geom);
+CREATE INDEX IF NOT EXISTS idx_posts_geog
+  ON posts USING GIST (geog);
+
+-- ============================================================
+-- 12) lat/lng range checks (guarded)
+-- ============================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'chk_posts_latitude_range'
+  ) THEN
+    ALTER TABLE posts
+      ADD CONSTRAINT chk_posts_latitude_range
+      CHECK (latitude >= -90 AND latitude <= 90);
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'chk_posts_longitude_range'
+  ) THEN
+    ALTER TABLE posts
+      ADD CONSTRAINT chk_posts_longitude_range
+      CHECK (longitude >= -180 AND longitude <= 180);
+  END IF;
+END $$;
 
 -- ============================================================
 -- 6) CHECK Constraints (guarded)

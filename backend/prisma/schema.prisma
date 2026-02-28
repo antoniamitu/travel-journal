@@ -1,19 +1,33 @@
+// backend/prisma/schema.prisma
 // ============================================================
 // Prisma Schema — AI-Integrated Geospatial Travel Journal
 // ============================================================
 // This schema covers all 5 tables defined in the PRDs.
 //
-// PostGIS note:
-//   The `geom` column uses Unsupported("geometry(Point, 4326)")
+// PostGIS note (IMPORTANT):
+//   The `geog` column uses Unsupported("geography(Point, 4326)")
 //   because Prisma has no native PostGIS support.
+//
+//   DB owns this column (computed/maintained DB-side):
+//     - A DB trigger sets geog from latitude/longitude on INSERT/UPDATE.
+//     - The DB enforces geog as NOT NULL.
+//
+//   Why is `geog` OPTIONAL in Prisma (`?`) if DB is NOT NULL?
+//     - Because `Unsupported(...)` fields are not reliably writable from Prisma.
+//     - Making it required can cause Prisma create/update payload validation issues.
+//     - DB integrity is still guaranteed by the trigger + NOT NULL constraint.
+//
 //   Raw SQL is used for:
-//     1. Creating/updating geom: ST_SetSRID(ST_MakePoint(lng, lat), 4326)
-//     2. Spatial queries: ST_Intersects + ST_MakeEnvelope (bounding box)
-//     3. GIST index on geom (created in migration SQL)
-//     4. Functional index on LOWER(username) (created in migration SQL)
+//     1. Creating/updating geog:
+//          ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography
+//     2. Spatial queries (bounding box):
+//          ST_Intersects(geog, ST_MakeEnvelope(w, s, e, n, 4326)::geography)
+//        IMPORTANT: ST_MakeEnvelope returns geometry, so ::geography cast is required.
+//     3. GIST index on geog (created in raw SQL migration)
+//     4. Functional index on LOWER(username) (created in raw SQL migration)
 //
 // After running `prisma migrate dev`, apply the PostGIS migration:
-//   See file: prisma/migrations/00_postgis_setup.sql
+//   See file: prisma/sql/00_postgis_setup.sql
 //
 // CASCADE chain:
 //   Delete User → CASCADE → Delete all user's Posts → CASCADE → Delete all post_images
@@ -71,21 +85,19 @@ model Post {
   created_at    DateTime @default(now()) @db.Timestamptz()
   updated_at    DateTime @updatedAt @db.Timestamptz()
 
-  // PostGIS geometry column — managed via raw SQL trigger
-  // ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
-  // Note: PostGIS uses (longitude, latitude) order, not (lat, lng)
-  geom Unsupported("geometry(Point, 4326)")?
+  // PostGIS geography column — maintained by DB trigger (NOT set by Prisma)
+  // ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography
+  // NOTE: longitude first, then latitude (PostGIS point order)
+  //
+  // Prisma keeps this optional because Unsupported fields are not reliably writable.
+  // DB still enforces NOT NULL on geog.
+  geog Unsupported("geography(Point, 4326)")?
 
   // Relations
-  // CASCADE: deleting a user deletes all their posts
   user   User        @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  // CASCADE: deleting a post deletes all its images
   images PostImage[]
 
   // Indexes
-  // - user_id: for fetching user's posts
-  // - created_at: for sorting (ORDER BY created_at DESC)
-  // - GIST index on geom: created in raw SQL migration
   @@index([user_id])
   @@index([created_at])
   @@map("posts")
@@ -102,10 +114,8 @@ model PostImage {
   display_order Int      @default(0)
   created_at    DateTime @default(now()) @db.Timestamptz()
 
-  // Relations — CASCADE delete when post is deleted
   post Post @relation(fields: [post_id], references: [id], onDelete: Cascade)
 
-  // Index on post_id for fetching images by post
   @@index([post_id])
   @@map("post_images")
 }
@@ -120,8 +130,6 @@ model GeocodeCache {
   results_json Json     @db.JsonB
   created_at   DateTime @default(now()) @db.Timestamptz()
 
-  // Unique constraint: one entry per (cache_key, cache_type)
-  // cache_type CHECK constraint: created in raw SQL migration
   @@unique([cache_key, cache_type])
   @@index([cache_key, cache_type, created_at])
   @@index([created_at])
@@ -137,7 +145,6 @@ model AiContentCache {
   content      String   @db.Text
   created_at   DateTime @default(now()) @db.Timestamptz()
 
-  // Index on created_at for TTL cleanup
   @@index([created_at])
   @@map("ai_content_cache")
 }
