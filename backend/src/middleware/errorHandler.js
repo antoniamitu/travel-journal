@@ -5,8 +5,7 @@ export function notFoundHandler(req, res) {
 
 // eslint-disable-next-line no-unused-vars
 export function errorHandler(err, req, res, next) {
-  // 1) Invalid JSON body (thrown by express.json)
-  // Covers multiple express/body-parser variants.
+  // Invalid JSON body (thrown by express.json)
   if (
     err instanceof SyntaxError &&
     (err?.status === 400 || err?.statusCode === 400 || err?.type === "entity.parse.failed")
@@ -14,20 +13,21 @@ export function errorHandler(err, req, res, next) {
     return res.status(400).json({ message: "Invalid JSON body" });
   }
 
-  // 2) HttpError (or any error using `statusCode`)
   const statusCode = Number(err?.statusCode);
+
+  // Controlled HttpError
   if (Number.isFinite(statusCode) && statusCode >= 400 && statusCode < 600) {
-    // Do NOT leak details for 500-level errors
-    if (statusCode >= 500) {
+    // ✅ safe, user-facing geocoding errors
+    const safe5xx = new Set([502, 503, 504]);
+
+    if (statusCode >= 500 && !safe5xx.has(statusCode)) {
       console.error(err);
       return res.status(statusCode).json({ message: "Internal server error" });
     }
 
-    // 4xx errors are safe to send (validation/auth/user-facing)
     return res.status(statusCode).json({ message: err?.message || "Request failed" });
   }
 
-  // 3) Fallback (unknown/unhandled errors)
   console.error(err);
   return res.status(500).json({ message: "Internal server error" });
 }

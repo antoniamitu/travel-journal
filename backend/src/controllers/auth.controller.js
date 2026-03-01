@@ -5,16 +5,8 @@ import jwt from "jsonwebtoken";
 import { ENV } from "../config/env.js";
 import { getPrisma } from "../config/prisma.js";
 import { HttpError } from "../utils/httpError.js";
+import { formatZodErrors } from "../utils/formatZodErrors.js";
 import { registerSchema, loginSchema } from "../validators/auth.validator.js";
-
-function fieldErrorsFromZod(zodError) {
-  const errors = {};
-  for (const issue of zodError.issues) {
-    const key = issue.path?.[0] || "general";
-    if (!errors[key]) errors[key] = issue.message; // keep first message per field
-  }
-  return errors;
-}
 
 function signToken(userId) {
   // PRD: token payload contains only `sub` claim
@@ -24,6 +16,7 @@ function signToken(userId) {
   });
 }
 
+// Prevent user enumeration timing differences
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync("dummy-password", 10);
 
 export async function register(req, res) {
@@ -38,7 +31,7 @@ export async function register(req, res) {
   if (!parsed.success) {
     return res.status(400).json({
       message: "Validation failed",
-      errors: fieldErrorsFromZod(parsed.error)
+      errors: formatZodErrors(parsed.error)
     });
   }
 
@@ -55,6 +48,7 @@ export async function register(req, res) {
     const token = signToken(user.id);
     return res.status(201).json({ user, token });
   } catch (err) {
+    // Prisma unique constraint violation
     if (err?.code === "P2002") {
       const target = err?.meta?.target;
       const t = Array.isArray(target) ? target.join(",") : String(target || "");
@@ -87,7 +81,7 @@ export async function login(req, res) {
   if (!parsed.success) {
     return res.status(400).json({
       message: "Validation failed",
-      errors: fieldErrorsFromZod(parsed.error)
+      errors: formatZodErrors(parsed.error)
     });
   }
 
@@ -100,6 +94,7 @@ export async function login(req, res) {
   });
 
   if (!user) {
+    // Timing defense: avoid user enumeration via response time
     await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
     throw new HttpError(401, "Invalid credentials");
   }
