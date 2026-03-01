@@ -4,21 +4,12 @@ import { ENV } from "../config/env.js";
 import { CACHE_TYPES } from "../constants/cacheTypes.js";
 import { geocodeSearchSchema, geocodeReverseSchema } from "../validators/query.validator.js";
 import { formatZodErrors } from "../utils/formatZodErrors.js";
+import { requireJsonBody } from "../utils/requireJsonBody.js";
 import { normalizeQuery } from "../utils/normalizeQuery.js";
 import { mapNominatimSearchResults, mapNominatimReverseResult } from "../utils/mapNominatim.js";
 import { nominatimQueue, canEnqueue, getQueueStats } from "../services/nominatimQueue.js";
 import { forwardGeocode, reverseGeocode } from "../services/nominatim.service.js";
 import { checkGeocodeLimit } from "../utils/geocodeRateLimit.js";
-
-function requireJsonObjectBody(req) {
-  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
-    return {
-      ok: false,
-      response: { message: "Validation failed", errors: { general: "Invalid request body" } }
-    };
-  }
-  return { ok: true };
-}
 
 function devMeta(obj) {
   return ENV.NODE_ENV === "development" ? obj : {};
@@ -47,8 +38,8 @@ async function cleanupExpiredCache(prisma, cutoff) {
 }
 
 export async function search(req, res) {
-  const guard = requireJsonObjectBody(req);
-  if (!guard.ok) return res.status(400).json(guard.response);
+  const guard = requireJsonBody(req, res);
+  if (!guard.ok) return;
 
   const parsed = geocodeSearchSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -61,6 +52,7 @@ export async function search(req, res) {
   const query = parsed.data.query;
   const cacheKey = normalizeQuery(query);
 
+  // Prevent useless keys like "!!!" -> ""
   if (cacheKey.length < 3) {
     return res.status(400).json({
       message: "Validation failed",
@@ -129,8 +121,8 @@ export async function search(req, res) {
 }
 
 export async function reverse(req, res) {
-  const guard = requireJsonObjectBody(req);
-  if (!guard.ok) return res.status(400).json(guard.response);
+  const guard = requireJsonBody(req, res);
+  if (!guard.ok) return;
 
   const parsed = geocodeReverseSchema.safeParse(req.body);
   if (!parsed.success) {

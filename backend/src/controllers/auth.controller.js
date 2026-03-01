@@ -6,26 +6,21 @@ import { ENV } from "../config/env.js";
 import { getPrisma } from "../config/prisma.js";
 import { HttpError } from "../utils/httpError.js";
 import { formatZodErrors } from "../utils/formatZodErrors.js";
+import { requireJsonBody } from "../utils/requireJsonBody.js";
 import { registerSchema, loginSchema } from "../validators/auth.validator.js";
 
 function signToken(userId) {
-  // PRD: token payload contains only `sub` claim
   return jwt.sign({ sub: String(userId) }, ENV.JWT_SECRET, {
     algorithm: "HS256",
     expiresIn: "24h"
   });
 }
 
-// Prevent user enumeration timing differences
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync("dummy-password", 10);
 
 export async function register(req, res) {
-  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
-    return res.status(400).json({
-      message: "Validation failed",
-      errors: { general: "Invalid request body" }
-    });
-  }
+  const guard = requireJsonBody(req, res);
+  if (!guard.ok) return;
 
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -48,7 +43,6 @@ export async function register(req, res) {
     const token = signToken(user.id);
     return res.status(201).json({ user, token });
   } catch (err) {
-    // Prisma unique constraint violation
     if (err?.code === "P2002") {
       const target = err?.meta?.target;
       const t = Array.isArray(target) ? target.join(",") : String(target || "");
@@ -70,12 +64,8 @@ export async function register(req, res) {
 }
 
 export async function login(req, res) {
-  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
-    return res.status(400).json({
-      message: "Validation failed",
-      errors: { general: "Invalid request body" }
-    });
-  }
+  const guard = requireJsonBody(req, res);
+  if (!guard.ok) return;
 
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -94,7 +84,6 @@ export async function login(req, res) {
   });
 
   if (!user) {
-    // Timing defense: avoid user enumeration via response time
     await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
     throw new HttpError(401, "Invalid credentials");
   }
@@ -111,11 +100,9 @@ export async function login(req, res) {
   });
 }
 
-// Feature 1.3
 export async function me(req, res) {
   const userId = req.userId;
 
-  // Defensive: if middleware didn't attach, still fail safely.
   if (!Number.isInteger(userId) || userId <= 0) {
     throw new HttpError(401, "Unauthorized");
   }
@@ -127,7 +114,6 @@ export async function me(req, res) {
     select: { id: true, email: true, username: true }
   });
 
-  // If the user was deleted after token issuance, treat as unauthorized.
   if (!user) {
     throw new HttpError(401, "Unauthorized");
   }
