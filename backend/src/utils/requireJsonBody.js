@@ -1,12 +1,14 @@
 // backend/src/utils/requireJsonBody.js
-export function requireJsonBody(req, res) {
-  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
-    res.status(400).json({
-      message: "Validation failed",
-      errors: { general: "Invalid request body" }
-    });
-    return { ok: false };
-  }
+import { HttpError } from "./httpError.js";
 
-  return { ok: true };
+/**
+ * requireJsonBody (middleware)
+ * - Ensures req.body exists and is a plain object (not array)
+ * - Throws HttpError(400) -> centralized error handling
+ */
+export function requireJsonBody(req, res, next) {
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+    throw new HttpError(400, "Validation failed", { general: "Invalid request body" });
+  }
+  return next();
 }

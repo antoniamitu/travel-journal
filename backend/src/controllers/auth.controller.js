@@ -6,7 +6,6 @@ import { ENV } from "../config/env.js";
 import { getPrisma } from "../config/prisma.js";
 import { HttpError } from "../utils/httpError.js";
 import { formatZodErrors } from "../utils/formatZodErrors.js";
-import { requireJsonBody } from "../utils/requireJsonBody.js";
 import { registerSchema, loginSchema } from "../validators/auth.validator.js";
 
 function signToken(userId) {
@@ -16,18 +15,14 @@ function signToken(userId) {
   });
 }
 
+// Prevent timing attacks / user enumeration on login
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync("dummy-password", 10);
 
 export async function register(req, res) {
-  const guard = requireJsonBody(req, res);
-  if (!guard.ok) return;
-
+  // requireJsonBody is now route middleware, so req.body is guaranteed to be a plain object
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      message: "Validation failed",
-      errors: formatZodErrors(parsed.error)
-    });
+    throw new HttpError(400, "Validation failed", formatZodErrors(parsed.error));
   }
 
   const { email, username, password } = parsed.data;
@@ -43,6 +38,7 @@ export async function register(req, res) {
     const token = signToken(user.id);
     return res.status(201).json({ user, token });
   } catch (err) {
+    // Prisma unique constraint
     if (err?.code === "P2002") {
       const target = err?.meta?.target;
       const t = Array.isArray(target) ? target.join(",") : String(target || "");
@@ -64,15 +60,10 @@ export async function register(req, res) {
 }
 
 export async function login(req, res) {
-  const guard = requireJsonBody(req, res);
-  if (!guard.ok) return;
-
+  // requireJsonBody is now route middleware, so req.body is guaranteed to be a plain object
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      message: "Validation failed",
-      errors: formatZodErrors(parsed.error)
-    });
+    throw new HttpError(400, "Validation failed", formatZodErrors(parsed.error));
   }
 
   const { email, password } = parsed.data;
@@ -84,6 +75,7 @@ export async function login(req, res) {
   });
 
   if (!user) {
+    // timing equalization
     await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
     throw new HttpError(401, "Invalid credentials");
   }

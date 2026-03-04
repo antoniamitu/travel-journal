@@ -4,12 +4,12 @@ import { ENV } from "../config/env.js";
 import { CACHE_TYPES } from "../constants/cacheTypes.js";
 import { geocodeSearchSchema, geocodeReverseSchema } from "../validators/query.validator.js";
 import { formatZodErrors } from "../utils/formatZodErrors.js";
-import { requireJsonBody } from "../utils/requireJsonBody.js";
 import { normalizeQuery } from "../utils/normalizeQuery.js";
 import { mapNominatimSearchResults, mapNominatimReverseResult } from "../utils/mapNominatim.js";
 import { nominatimQueue, canEnqueue, getQueueStats } from "../services/nominatimQueue.js";
 import { forwardGeocode, reverseGeocode } from "../services/nominatim.service.js";
 import { checkGeocodeLimit } from "../utils/geocodeRateLimit.js";
+import { HttpError } from "../utils/httpError.js";
 
 function devMeta(obj) {
   return ENV.NODE_ENV === "development" ? obj : {};
@@ -37,26 +37,24 @@ async function cleanupExpiredCache(prisma, cutoff) {
   }
 }
 
-export async function search(req, res) {
-  const guard = requireJsonBody(req, res);
-  if (!guard.ok) return;
+function setRetryAfterHeader(res, retryAfterMs) {
+  // HTTP Retry-After is in seconds (integer)
+  const seconds = Math.max(1, Math.ceil(Number(retryAfterMs || 0) / 1000));
+  res.set("Retry-After", String(seconds));
+}
 
+export async function search(req, res) {
   const parsed = geocodeSearchSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      message: "Validation failed",
-      errors: formatZodErrors(parsed.error)
-    });
+    throw new HttpError(400, "Validation failed", formatZodErrors(parsed.error));
   }
 
   const query = parsed.data.query;
   const cacheKey = normalizeQuery(query);
 
-  // Prevent useless keys like "!!!" -> ""
   if (cacheKey.length < 3) {
-    return res.status(400).json({
-      message: "Validation failed",
-      errors: { query: "Query must contain at least 3 alphanumeric characters" }
+    throw new HttpError(400, "Validation failed", {
+      query: "Query must contain at least 3 alphanumeric characters"
     });
   }
 
@@ -85,15 +83,22 @@ export async function search(req, res) {
   }
 
   if (!canEnqueue()) {
-    return res.status(503).json({ message: "Geocoding service is busy, please try again shortly" });
+    throw new HttpError(503, "Geocoding service is busy, please try again shortly");
   }
 
   const limit = checkGeocodeLimit(req.userId, req.ip);
   if (!limit.ok) {
-    return res.status(429).json({ message: "Too many geocoding requests, please slow down" });
+    setRetryAfterHeader(res, limit.retryAfterMs);
+    throw new HttpError(429, "Too many geocoding requests, please slow down");
   }
 
-  const raw = await nominatimQueue.add(() => forwardGeocode(query));
+  let raw;
+  try {
+    raw = await nominatimQueue.add(() => forwardGeocode(query));
+  } catch (err) {
+    console.warn("[geocode] queue failure (forward):", err?.message || err);
+    throw new HttpError(503, "Geocoding service temporarily unavailable. Please try again shortly.");
+  }
 
   await prisma.geocodeCache.upsert({
     where: {
@@ -121,15 +126,9 @@ export async function search(req, res) {
 }
 
 export async function reverse(req, res) {
-  const guard = requireJsonBody(req, res);
-  if (!guard.ok) return;
-
   const parsed = geocodeReverseSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      message: "Validation failed",
-      errors: formatZodErrors(parsed.error)
-    });
+    throw new HttpError(400, "Validation failed", formatZodErrors(parsed.error));
   }
 
   let { lat, lng } = parsed.data;
@@ -163,15 +162,22 @@ export async function reverse(req, res) {
   }
 
   if (!canEnqueue()) {
-    return res.status(503).json({ message: "Geocoding service is busy, please try again shortly" });
+    throw new HttpError(503, "Geocoding service is busy, please try again shortly");
   }
 
   const limit = checkGeocodeLimit(req.userId, req.ip);
   if (!limit.ok) {
-    return res.status(429).json({ message: "Too many geocoding requests, please slow down" });
+    setRetryAfterHeader(res, limit.retryAfterMs);
+    throw new HttpError(429, "Too many geocoding requests, please slow down");
   }
 
-  const raw = await nominatimQueue.add(() => reverseGeocode(lat, lng));
+  let raw;
+  try {
+    raw = await nominatimQueue.add(() => reverseGeocode(lat, lng));
+  } catch (err) {
+    console.warn("[geocode] queue failure (reverse):", err?.message || err);
+    throw new HttpError(503, "Geocoding service temporarily unavailable. Please try again shortly.");
+  }
 
   await prisma.geocodeCache.upsert({
     where: {

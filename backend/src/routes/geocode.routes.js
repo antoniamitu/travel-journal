@@ -2,6 +2,7 @@
 import { Router } from "express";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { requireJsonBody } from "../utils/requireJsonBody.js";
 import { search, reverse } from "../controllers/geocode.controller.js";
 
 const router = Router();
@@ -13,7 +14,7 @@ router.get(
   })
 );
 
-router.post("/search", requireAuth, asyncHandler(search));
-router.post("/reverse", requireAuth, asyncHandler(reverse));
+router.post("/search", requireAuth, requireJsonBody, asyncHandler(search));
+router.post("/reverse", requireAuth, requireJsonBody, asyncHandler(reverse));
 
 export default router;

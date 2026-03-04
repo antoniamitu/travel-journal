@@ -1,5 +1,6 @@
 // frontend/src/context/AuthContext.jsx
 import React, { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import toast from "react-hot-toast";
 import { api } from "../api/axios.js";
 import { LS_TOKEN_KEY, LS_USER_KEY } from "../constants/storage.js";
 
@@ -26,6 +27,7 @@ export function AuthProvider({ children }) {
   const [isInitializing, setIsInitializing] = useState(true);
 
   const isLoggingOutRef = useRef(false);
+  const lastSessionToastAtRef = useRef(0);
 
   const isAuthenticated = useMemo(() => {
     return Boolean(token) && Boolean(user?.id || user?.email);
@@ -48,7 +50,6 @@ export function AuthProvider({ children }) {
       setUser(null);
       persistAuth("", null);
     } finally {
-      // allow future logouts after this tick (prevents logout storms on multiple 401s)
       setTimeout(() => {
         isLoggingOutRef.current = false;
       }, 0);
@@ -134,9 +135,7 @@ export function AuthProvider({ children }) {
         try {
           const res = await api.get("/auth/me", { timeout: 15000 });
 
-          // Backend contract: { user }
           const me = res?.data?.user;
-
           if (!me) throw new Error("Invalid /auth/me response shape: missing user.");
 
           if (!cancelled) {
@@ -153,7 +152,6 @@ export function AuthProvider({ children }) {
               persistAuth("", null);
             }
           } else {
-            // Network/unknown: keep cached user if we have one, otherwise clear to avoid broken state loops
             if (!cachedUser && !cancelled) {
               setToken("");
               setUser(null);
@@ -194,6 +192,7 @@ export function AuthProvider({ children }) {
   /**
    * Global 401/403 handling:
    * Only auto-logout if a token exists, to avoid impacting bad login attempts.
+   * Show a single toast with cooldown to avoid spam.
    */
   useEffect(() => {
     const id = api.interceptors.response.use(
@@ -203,6 +202,12 @@ export function AuthProvider({ children }) {
         const currentToken = localStorage.getItem(LS_TOKEN_KEY);
 
         if ((status === 401 || status === 403) && currentToken && !isLoggingOutRef.current) {
+          const now = Date.now();
+          if (now - lastSessionToastAtRef.current > 3000) {
+            lastSessionToastAtRef.current = now;
+            toast.error("Session expired. Please log in again.");
+          }
+
           await logout();
         }
 

@@ -25,7 +25,12 @@ export function errorHandler(err, req, res, next) {
       return res.status(statusCode).json({ message: "Internal server error" });
     }
 
-    return res.status(statusCode).json({ message: err?.message || "Request failed" });
+    const payload = { message: err?.message || "Request failed" };
+    if (err?.errors && typeof err.errors === "object" && !Array.isArray(err.errors)) {
+      payload.errors = err.errors;
+    }
+
+    return res.status(statusCode).json(payload);
   }
 
   console.error(err);

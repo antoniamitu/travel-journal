@@ -2,6 +2,14 @@
 const WINDOW_MS = 60_000;
 const MAX_PER_WINDOW = 10;
 
+/**
+ * NOTE:
+ * In-memory, single-process rate limiter.
+ * Works for one Node instance (e.g., Render free tier single instance).
+ * If you scale horizontally or restart the process, counters reset/split.
+ * For multi-instance correctness, move this to Redis or DB-based limiting.
+ */
+
 // key -> array of timestamps
 const hits = new Map();
 
@@ -14,9 +22,9 @@ function pruneOld(timestamps, now) {
 setInterval(() => {
   const now = Date.now();
   for (const [k, v] of hits.entries()) {
-    if (pruneOld(v, now).length === 0) {
-      hits.delete(k);
-    }
+    const pruned = pruneOld(v, now);
+    if (pruned.length === 0) hits.delete(k);
+    else hits.set(k, pruned);
   }
 }, WINDOW_MS).unref();
 
