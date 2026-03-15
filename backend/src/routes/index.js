@@ -3,6 +3,8 @@ import { Router } from "express";
 
 import authRoutes from "./auth.routes.js";
 import geocodeRoutes from "./geocode.routes.js";
+import uploadsRoutes from "./uploads.routes.js";
+import postsRoutes from "./posts.routes.js";
 
 const router = Router();
 
@@ -16,5 +18,7 @@ router.get("/health", (req, res) => {
 
 router.use("/auth", authRoutes);
 router.use("/geocode", geocodeRoutes);
+router.use("/uploads", uploadsRoutes);
+router.use("/posts", postsRoutes);
 
 export default router;

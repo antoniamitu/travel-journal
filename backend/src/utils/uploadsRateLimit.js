@@ -1,8 +1,12 @@
-// backend/src/utils/geocodeRateLimit.js
+// backend/src/utils/uploadsRateLimit.js
 import { createSlidingWindowRateLimiter } from "./slidingWindowRateLimiter.js";
 
 const WINDOW_MS = 60_000;
-const MAX_PER_WINDOW = 10;
+
+const LIMITS = {
+  sign: 30,
+  cleanup: 10
+};
 
 /**
  * NOTE:
@@ -12,11 +16,13 @@ const MAX_PER_WINDOW = 10;
  */
 const limiter = createSlidingWindowRateLimiter(WINDOW_MS);
 
-export function checkGeocodeLimit(userId, ip) {
+export function checkUploadsLimit(action, userId, ip) {
+  const max = LIMITS[action] ?? 10;
+
   const key =
     Number.isInteger(userId) && userId > 0
-      ? `user:${userId}`
-      : `ip:${ip || "unknown"}`;
+      ? `user:${userId}:${action}`
+      : `ip:${ip || "unknown"}:${action}`;
 
-  return limiter.check(key, MAX_PER_WINDOW);
+  return limiter.check(key, max);
 }

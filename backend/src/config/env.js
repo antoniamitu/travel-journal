@@ -15,6 +15,17 @@ const normalizeUrlNoTrailingSlash = (v) => {
   return s.endsWith("/") ? s.slice(0, -1) : s;
 };
 
+const normalizeCloudinaryFolder = (s) => {
+  let out = typeof s === "string" ? s.trim() : "";
+  if (!out) out = "travel-journal";
+
+  out = out.replace(/\\/g, "/");
+  out = out.replace(/^\/+/, "").replace(/\/+$/, "");
+  out = out.replace(/\/{2,}/g, "/");
+
+  return out;
+};
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
@@ -41,7 +52,35 @@ const envSchema = z
       .trim()
       .min(1, "NOMINATIM_BASE_URL is required")
       .default("https://nominatim.openstreetmap.org")
-      .transform(normalizeUrlNoTrailingSlash)
+      .transform(normalizeUrlNoTrailingSlash),
+
+    // ✅ PRD#3 / Cloudinary
+    CLOUDINARY_CLOUD_NAME: z
+      .string()
+      .trim()
+      .min(1, "CLOUDINARY_CLOUD_NAME is required")
+      .refine((v) => /^[a-z0-9_-]+$/i.test(v), "CLOUDINARY_CLOUD_NAME has invalid characters"),
+
+    CLOUDINARY_API_KEY: z
+      .string()
+      .trim()
+      .min(1, "CLOUDINARY_API_KEY is required")
+      .refine((v) => /^\d+$/.test(v), "CLOUDINARY_API_KEY must contain only digits"),
+
+    CLOUDINARY_API_SECRET: z.string().trim().min(1, "CLOUDINARY_API_SECRET is required"),
+
+    CLOUDINARY_FOLDER: z
+      .string()
+      .trim()
+      .default("travel-journal")
+      .transform(normalizeCloudinaryFolder)
+      .refine((v) => v.length > 0, "CLOUDINARY_FOLDER is required")
+      .refine((v) => v.length <= 80, "CLOUDINARY_FOLDER too long (max 80 chars)")
+      .refine((v) => !v.includes(".."), "CLOUDINARY_FOLDER must not contain '..'")
+      .refine(
+        (v) => /^[a-zA-Z0-9/_-]+$/.test(v),
+        "CLOUDINARY_FOLDER may contain only letters, digits, '/', '_', '-'"
+      )
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === "development" && !env.FRONTEND_URL_DEV) {
