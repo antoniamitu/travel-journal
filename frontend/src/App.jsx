@@ -2,11 +2,12 @@
 import React from "react";
 import { Link, Navigate, Route, Routes } from "react-router-dom";
 
-
 import LoginPage from "./pages/LoginPage.jsx";
 import RegisterPage from "./pages/RegisterPage.jsx";
 import FeedPage from "./pages/FeedPage.jsx";
 import MapPage from "./pages/MapPage.jsx";
+import PostDetailPage from "./pages/PostDetailPage.jsx";
+import PostEditorPage from "./pages/PostEditorPage.jsx";
 import ProtectedRoute from "./components/auth/ProtectedRoute.jsx";
 import AppLayout from "./components/layout/AppLayout.jsx";
 
@@ -28,25 +29,27 @@ function Placeholder({ title }) {
 
 export default function App() {
   return (
-    <>
-      <Routes>
-        <Route path="/" element={<Navigate to="/feed" replace />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+    <Routes>
+      <Route path="/" element={<Navigate to="/feed" replace />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
 
-        <Route
-          element={
-            <ProtectedRoute>
-              <AppLayout />
-            </ProtectedRoute>
-          }
-        >
-          <Route path="/feed" element={<FeedPage />} />
-          <Route path="/map" element={<MapPage />} />
-        </Route>
+      <Route
+        element={
+          <ProtectedRoute>
+            <AppLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="/feed" element={<FeedPage />} />
+        <Route path="/map" element={<MapPage />} />
 
-        <Route path="*" element={<Placeholder title="Not Found" />} />
-      </Routes>
-    </>
+        <Route path="/posts/new" element={<PostEditorPage />} />
+        <Route path="/posts/:id" element={<PostDetailPage />} />
+        <Route path="/posts/:id/edit" element={<PostEditorPage />} />
+      </Route>
+
+      <Route path="*" element={<Placeholder title="Not Found" />} />
+    </Routes>
   );
 }

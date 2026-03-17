@@ -1,25 +1,29 @@
 // frontend/src/components/layout/NavBar.jsx
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
-import { useLocationContext } from "../../hooks/useLocationContext.js";
-import TopGeocodeBar from "./TopGeocodeBar.jsx";
+
+function isPostsWorkspace(pathname) {
+  return pathname === "/posts/new" || /^\/posts\/[^/]+(?:\/edit)?$/.test(pathname || "");
+}
 
 export default function NavBar() {
   const { user, logout } = useAuth();
-  const { setSelectedPlace } = useLocationContext();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [hoverIndex, setHoverIndex] = useState(-1);
+  const [globalSearch, setGlobalSearch] = useState("");
 
   const wrapRef = useRef(null);
   const buttonRef = useRef(null);
   const itemsRef = useRef([]);
 
   const menuId = useId();
+  const postsWorkspace = isPostsWorkspace(location.pathname);
 
   const displayName = useMemo(
     () => user?.username || user?.email || "Account",
@@ -42,6 +46,7 @@ export default function NavBar() {
     function onPointerDown(e) {
       if (!wrapRef.current?.contains(e.target)) closeMenu({ restoreFocus: false });
     }
+
     function onKeyDown(e) {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -51,6 +56,7 @@ export default function NavBar() {
 
     document.addEventListener("pointerdown", onPointerDown, { capture: true });
     document.addEventListener("keydown", onKeyDown);
+
     return () => {
       document.removeEventListener("pointerdown", onPointerDown, { capture: true });
       document.removeEventListener("keydown", onKeyDown);
@@ -133,25 +139,63 @@ export default function NavBar() {
     [activeIndex, MENU_ITEMS]
   );
 
+  const shellClass = postsWorkspace
+    ? "border-slate-200 bg-white"
+    : "border-white/10 bg-[oklch(39.8%_0.07_227.392)]";
+
+  const brandTextClass = postsWorkspace
+    ? "text-slate-900 hover:text-emerald-700"
+    : "text-white hover:text-emerald-200";
+
   return (
-    <nav className="sticky top-0 z-[1100] border-b border-white/10 bg-[oklch(39.8%_0.07_227.392)]">
-      <div className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-3">
+    <nav className={`sticky top-0 z-[1100] border-b ${shellClass}`}>
+      <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3">
         <Link
           to="/feed"
-          className="shrink-0 text-lg font-bold text-white transition hover:text-emerald-200"
+          className={`flex shrink-0 items-center gap-3 text-lg font-bold transition ${brandTextClass}`}
         >
-          Travel Journal
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-sm">
+            📍
+          </span>
+          <span>GeoTravel Journal</span>
         </Link>
 
-        <div className="flex-1 max-w-xl">
-          <TopGeocodeBar
-            onSelectPlace={(item) => {
-              setSelectedPlace(item, "search");
-            }}
-          />
-        </div>
+        <form
+          className="max-w-xl flex-1"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!globalSearch.trim()) return;
+            toast("Global search will be connected later.");
+          }}
+        >
+          <div className="relative">
+            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+              🔎
+            </span>
 
-        <div ref={wrapRef} className="relative shrink-0 outline-none" tabIndex={-1} onBlur={onWrapperBlur}>
+            <input
+              type="text"
+              value={globalSearch}
+              onChange={(e) => setGlobalSearch(e.target.value)}
+              placeholder="Search people, posts, places..."
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-11 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+            />
+          </div>
+        </form>
+
+        <Link
+          to="/posts/new"
+          className="shrink-0 rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
+        >
+          + New Post
+        </Link>
+
+        <div
+          ref={wrapRef}
+          className="relative shrink-0 outline-none"
+          tabIndex={-1}
+          onBlur={onWrapperBlur}
+        >
           <button
             ref={buttonRef}
             type="button"
@@ -176,7 +220,9 @@ export default function NavBar() {
             >
               <div className="border-b border-slate-100 px-4 py-3 text-xs text-slate-500">
                 Signed in as
-                <div className="mt-1 break-words text-sm font-semibold text-slate-900">{emailLabel}</div>
+                <div className="mt-1 break-words text-sm font-semibold text-slate-900">
+                  {emailLabel}
+                </div>
               </div>
 
               <ul className="m-0 list-none p-0">

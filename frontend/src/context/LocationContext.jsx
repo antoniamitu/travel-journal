@@ -5,10 +5,10 @@ export const LocationContext = createContext(null);
 
 /**
  * selectedPlace: object|null
- * selectionSource: "search" | "click" | null
+ * selectionSource: "search" | "click" | "gps" | "post-create" | null
  *
- * We keep "selectionSource" separate so Map zoom logic can distinguish
- * search selection vs map click.
+ * We keep "selectionSource" separate so map behavior can distinguish
+ * the origin of the latest selection deterministically.
  */
 export function LocationProvider({ children }) {
   const [selectedPlace, setSelectedPlaceState] = useState(null);
@@ -16,7 +16,7 @@ export function LocationProvider({ children }) {
 
   const setSelectedPlace = useCallback((place, source = null) => {
     setSelectedPlaceState(place || null);
-    if (source) setSelectionSource(source);
+    setSelectionSource(source || null);
   }, []);
 
   const clearSelectedPlace = useCallback(() => {

@@ -4,21 +4,20 @@ import toast from "react-hot-toast";
 import { api } from "../api/axios.js";
 import { LS_TOKEN_KEY, LS_USER_KEY } from "../constants/storage.js";
 
-/**
- * NOTE (intentional):
- * - axios.js has a request interceptor that attaches Authorization: Bearer <token>.
- * - We DO NOT duplicate that interceptor here in AuthContext.
- */
-
 export const AuthContext = createContext(null);
 
 function safeParseJson(raw) {
   if (!raw) return null;
+
   try {
     return JSON.parse(raw);
   } catch {
     return null;
   }
+}
+
+function isUnauthorizedError(error) {
+  return error?.response?.status === 401;
 }
 
 export function AuthProvider({ children }) {
@@ -29,36 +28,70 @@ export function AuthProvider({ children }) {
   const isLoggingOutRef = useRef(false);
   const lastSessionToastAtRef = useRef(0);
 
-  const isAuthenticated = useMemo(() => {
-    return Boolean(token) && Boolean(user?.id || user?.email);
-  }, [token, user]);
-
   const persistAuth = useCallback((nextToken, nextUser) => {
-    if (nextToken) localStorage.setItem(LS_TOKEN_KEY, nextToken);
-    else localStorage.removeItem(LS_TOKEN_KEY);
+    if (nextToken) {
+      localStorage.setItem(LS_TOKEN_KEY, nextToken);
+    } else {
+      localStorage.removeItem(LS_TOKEN_KEY);
+    }
 
-    if (nextUser) localStorage.setItem(LS_USER_KEY, JSON.stringify(nextUser));
-    else localStorage.removeItem(LS_USER_KEY);
+    if (nextUser) {
+      localStorage.setItem(LS_USER_KEY, JSON.stringify(nextUser));
+    } else {
+      localStorage.removeItem(LS_USER_KEY);
+    }
+  }, []);
+
+  const clearAuthState = useCallback(() => {
+    setToken("");
+    setUser(null);
+    persistAuth("", null);
+  }, [persistAuth]);
+
+  const showSessionExpiredToast = useCallback(() => {
+    const now = Date.now();
+
+    if (now - lastSessionToastAtRef.current < 3000) {
+      return;
+    }
+
+    lastSessionToastAtRef.current = now;
+    toast.error("Session expired. Please log in again.");
   }, []);
 
   const logout = useCallback(async () => {
     if (isLoggingOutRef.current) return;
+
     isLoggingOutRef.current = true;
 
     try {
-      setToken("");
-      setUser(null);
-      persistAuth("", null);
+      clearAuthState();
     } finally {
       setTimeout(() => {
         isLoggingOutRef.current = false;
       }, 0);
     }
-  }, [persistAuth]);
+  }, [clearAuthState]);
+
+  const forceSessionReset = useCallback(() => {
+    if (!isLoggingOutRef.current) {
+      isLoggingOutRef.current = true;
+    }
+
+    showSessionExpiredToast();
+    clearAuthState();
+
+    setTimeout(() => {
+      isLoggingOutRef.current = false;
+    }, 0);
+  }, [clearAuthState, showSessionExpiredToast]);
 
   const login = useCallback(
     async ({ email, password }, options = {}) => {
-      const payload = { email: String(email || "").trim(), password: String(password || "") };
+      const payload = {
+        email: String(email || "").trim(),
+        password: String(password || "")
+      };
 
       const res = await api.post("/auth/login", payload, { timeout: 15000, ...options });
 
@@ -104,13 +137,6 @@ export function AuthProvider({ children }) {
     [persistAuth]
   );
 
-  /**
-   * Bootstrap session:
-   * - If no token: done.
-   * - If token: hydrate from localStorage, then verify via /auth/me.
-   * - If /auth/me returns 401/403: clear auth.
-   * - If /auth/me fails (network/unknown): if no cached user, clear auth to avoid loops.
-   */
   useEffect(() => {
     let cancelled = false;
 
@@ -129,51 +155,44 @@ export function AuthProvider({ children }) {
 
         if (!cancelled) {
           setToken(existingToken);
-          if (cachedUser) setUser(cachedUser);
+          if (cachedUser) {
+            setUser(cachedUser);
+          }
         }
 
         try {
           const res = await api.get("/auth/me", { timeout: 15000 });
-
           const me = res?.data?.user;
-          if (!me) throw new Error("Invalid /auth/me response shape: missing user.");
+
+          if (!me) {
+            throw new Error("Invalid /auth/me response shape: missing user.");
+          }
 
           if (!cancelled) {
             setUser(me);
             persistAuth(existingToken, me);
           }
         } catch (err) {
-          const status = err?.response?.status;
-
-          if (status === 401 || status === 403) {
-            if (!cancelled) {
-              setToken("");
-              setUser(null);
-              persistAuth("", null);
-            }
-          } else {
-            if (!cachedUser && !cancelled) {
-              setToken("");
-              setUser(null);
-              persistAuth("", null);
-            }
+          if (!cancelled && isUnauthorizedError(err)) {
+            forceSessionReset();
+          } else if (!cancelled && !cachedUser) {
+            clearAuthState();
           }
         }
       } finally {
-        if (!cancelled) setIsInitializing(false);
+        if (!cancelled) {
+          setIsInitializing(false);
+        }
       }
     }
 
     init();
+
     return () => {
       cancelled = true;
     };
-  }, [persistAuth]);
+  }, [persistAuth, clearAuthState, forceSessionReset]);
 
-  /**
-   * Multi-tab sync:
-   * If auth changes in another tab (login/logout), update this tab's state immediately.
-   */
   useEffect(() => {
     function onStorage(e) {
       if (e.key !== LS_TOKEN_KEY && e.key !== LS_USER_KEY) return;
@@ -189,26 +208,14 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  /**
-   * Global 401/403 handling:
-   * Only auto-logout if a token exists, to avoid impacting bad login attempts.
-   * Show a single toast with cooldown to avoid spam.
-   */
   useEffect(() => {
-    const id = api.interceptors.response.use(
+    const interceptorId = api.interceptors.response.use(
       (response) => response,
       async (error) => {
-        const status = error?.response?.status;
         const currentToken = localStorage.getItem(LS_TOKEN_KEY);
 
-        if ((status === 401 || status === 403) && currentToken && !isLoggingOutRef.current) {
-          const now = Date.now();
-          if (now - lastSessionToastAtRef.current > 3000) {
-            lastSessionToastAtRef.current = now;
-            toast.error("Session expired. Please log in again.");
-          }
-
-          await logout();
+        if (isUnauthorizedError(error) && currentToken && !isLoggingOutRef.current) {
+          forceSessionReset();
         }
 
         return Promise.reject(error);
@@ -216,9 +223,13 @@ export function AuthProvider({ children }) {
     );
 
     return () => {
-      api.interceptors.response.eject(id);
+      api.interceptors.response.eject(interceptorId);
     };
-  }, [logout]);
+  }, [forceSessionReset]);
+
+  const isAuthenticated = useMemo(() => {
+    return Boolean(token) && Boolean(user?.id || user?.email);
+  }, [token, user]);
 
   const value = useMemo(
     () => ({
