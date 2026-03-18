@@ -3,8 +3,13 @@ import { getPrisma } from "../config/prisma.js";
 import { ENV } from "../config/env.js";
 import { HttpError } from "../utils/httpError.js";
 import { formatZodErrors } from "../utils/formatZodErrors.js";
-import { createPostSchema, postIdParamsSchema, updatePostSchema } from "../validators/post.validator.js";
+import {
+  createPostSchema,
+  postIdParamsSchema,
+  updatePostSchema
+} from "../validators/post.validator.js";
 import { cleanupUploads, getUploadFolderForUser } from "../services/cloudinary.service.js";
+import { mapPostToApi } from "../mappers/post.mapper.js";
 
 const fixNegZero = (n) => (Object.is(n, -0) ? 0 : n);
 
@@ -81,36 +86,6 @@ function urlPathContainsPublicId(secureUrl, publicId) {
 
   const after = url.pathname.slice(idx + marker.length);
   return after === "" || after.startsWith(".") || after.startsWith("/");
-}
-
-function mapPostToApi(post, viewerUserId) {
-  const isOwner = post.user_id === viewerUserId;
-
-  return {
-    id: post.id,
-    userId: post.user_id,
-    title: post.title,
-    content: post.content,
-    latitude: post.latitude,
-    longitude: post.longitude,
-    locationName: post.location_name,
-    city: post.city,
-    country: post.country,
-    sentiment: post.sentiment,
-    privacy: post.privacy,
-    createdAt: post.created_at,
-    updatedAt: post.updated_at,
-    isOwner,
-    canEdit: isOwner,
-    canDelete: isOwner,
-    images: (post.images || []).map((img) => ({
-      id: img.id,
-      secureUrl: img.secure_url,
-      publicId: img.public_id,
-      displayOrder: img.display_order,
-      createdAt: img.created_at
-    }))
-  };
 }
 
 function uniqueStrings(values) {

@@ -26,6 +26,12 @@ const normalizeCloudinaryFolder = (s) => {
   return out;
 };
 
+const normalizeOptionalTrimmed = (v) => {
+  if (typeof v !== "string") return undefined;
+  const s = v.trim();
+  return s || undefined;
+};
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
@@ -44,7 +50,7 @@ const envSchema = z
     FRONTEND_URL: z.string().optional().transform(normalizeOrigin),
     FRONTEND_URL_DEV: z.string().optional().transform(normalizeOrigin),
 
-    // ✅ PRD#2 / Nominatim
+    // PRD #2 — Nominatim
     NOMINATIM_USER_AGENT: z.string().trim().min(10, "NOMINATIM_USER_AGENT is required"),
 
     NOMINATIM_BASE_URL: z
@@ -54,7 +60,7 @@ const envSchema = z
       .default("https://nominatim.openstreetmap.org")
       .transform(normalizeUrlNoTrailingSlash),
 
-    // ✅ PRD#3 / Cloudinary
+    // PRD #3 — Cloudinary
     CLOUDINARY_CLOUD_NAME: z
       .string()
       .trim()
@@ -80,7 +86,65 @@ const envSchema = z
       .refine(
         (v) => /^[a-zA-Z0-9/_-]+$/.test(v),
         "CLOUDINARY_FOLDER may contain only letters, digits, '/', '_', '-'"
-      )
+      ),
+
+    // PRD #4 — Gemini AI
+    GEMINI_API_KEY: z.string().trim().min(1, "GEMINI_API_KEY is required"),
+
+    GEMINI_MODEL: z
+      .string()
+      .optional()
+      .transform(normalizeOptionalTrimmed)
+      .pipe(z.string().min(1, "GEMINI_MODEL cannot be empty").default("gemini-2.5-flash")),
+
+    AI_LEARN_MORE_WINDOW_MS: z.coerce
+      .number()
+      .int("AI_LEARN_MORE_WINDOW_MS must be an integer")
+      .min(1_000, "AI_LEARN_MORE_WINDOW_MS must be at least 1000 ms")
+      .max(3_600_000, "AI_LEARN_MORE_WINDOW_MS must be at most 3600000 ms")
+      .default(60_000),
+
+    AI_LEARN_MORE_MAX_PER_WINDOW: z.coerce
+      .number()
+      .int("AI_LEARN_MORE_MAX_PER_WINDOW must be an integer")
+      .min(1, "AI_LEARN_MORE_MAX_PER_WINDOW must be at least 1")
+      .max(1_000, "AI_LEARN_MORE_MAX_PER_WINDOW must be at most 1000")
+      .default(10),
+
+    AI_LEARN_MORE_GLOBAL_MAX_PER_WINDOW: z.coerce
+      .number()
+      .int("AI_LEARN_MORE_GLOBAL_MAX_PER_WINDOW must be an integer")
+      .min(1, "AI_LEARN_MORE_GLOBAL_MAX_PER_WINDOW must be at least 1")
+      .max(10_000, "AI_LEARN_MORE_GLOBAL_MAX_PER_WINDOW must be at most 10000")
+      .default(60),
+
+    AI_CACHE_TTL_DAYS: z.coerce
+      .number()
+      .int("AI_CACHE_TTL_DAYS must be an integer")
+      .min(1, "AI_CACHE_TTL_DAYS must be at least 1")
+      .max(365, "AI_CACHE_TTL_DAYS must be at most 365")
+      .default(30),
+
+    AI_UPSTREAM_TIMEOUT_MS: z.coerce
+      .number()
+      .int("AI_UPSTREAM_TIMEOUT_MS must be an integer")
+      .min(1_000, "AI_UPSTREAM_TIMEOUT_MS must be at least 1000 ms")
+      .max(60_000, "AI_UPSTREAM_TIMEOUT_MS must be at most 60000 ms")
+      .default(15_000),
+
+    AI_RETRY_ATTEMPTS: z.coerce
+      .number()
+      .int("AI_RETRY_ATTEMPTS must be an integer")
+      .min(1, "AI_RETRY_ATTEMPTS must be at least 1")
+      .max(5, "AI_RETRY_ATTEMPTS must be at most 5")
+      .default(3),
+
+    AI_RETRY_BASE_DELAY_MS: z.coerce
+      .number()
+      .int("AI_RETRY_BASE_DELAY_MS must be an integer")
+      .min(0, "AI_RETRY_BASE_DELAY_MS must be at least 0 ms")
+      .max(10_000, "AI_RETRY_BASE_DELAY_MS must be at most 10000 ms")
+      .default(500)
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === "development" && !env.FRONTEND_URL_DEV) {
@@ -104,6 +168,15 @@ const envSchema = z
         code: "custom",
         path: ["NOMINATIM_BASE_URL"],
         message: "NOMINATIM_BASE_URL must start with http:// or https://"
+      });
+    }
+
+    if (env.AI_LEARN_MORE_GLOBAL_MAX_PER_WINDOW < env.AI_LEARN_MORE_MAX_PER_WINDOW) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["AI_LEARN_MORE_GLOBAL_MAX_PER_WINDOW"],
+        message:
+          "AI_LEARN_MORE_GLOBAL_MAX_PER_WINDOW should be greater than or equal to AI_LEARN_MORE_MAX_PER_WINDOW"
       });
     }
   });

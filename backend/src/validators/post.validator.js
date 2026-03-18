@@ -2,23 +2,10 @@
 import { z } from "zod";
 import { SENTIMENT_VALUES } from "../constants/sentiment.js";
 import { PRIVACY_VALUES } from "../constants/privacy.js";
+import { asNumberOrUndefined } from "./shared.js";
 
 const trimOrEmpty = (val) => (typeof val === "string" ? val.trim() : "");
 const trimLowerOrEmpty = (val) => (typeof val === "string" ? val.trim().toLowerCase() : "");
-
-const asNumberOrUndefined = (val) => {
-  if (typeof val === "number") return val;
-
-  if (typeof val === "string") {
-    const s = val.trim();
-    if (s === "") return undefined;
-
-    const n = Number(s);
-    return Number.isFinite(n) ? n : undefined;
-  }
-
-  return undefined;
-};
 
 const emptyToUndefined = (val) => {
   const s = trimOrEmpty(val);
@@ -54,12 +41,18 @@ const postBodySchema = z
   .object({
     title: z.preprocess(
       trimOrEmpty,
-      z.string().min(3, "Title must be at least 3 characters").max(100, "Title must be at most 100 characters")
+      z
+        .string()
+        .min(3, "Title must be at least 3 characters")
+        .max(100, "Title must be at most 100 characters")
     ),
 
     content: z.preprocess(
       trimOrEmpty,
-      z.string().min(10, "Content must be at least 10 characters").max(2000, "Content cannot exceed 2000 characters")
+      z
+        .string()
+        .min(10, "Content must be at least 10 characters")
+        .max(2000, "Content cannot exceed 2000 characters")
     ),
 
     latitude: z.preprocess(
@@ -82,10 +75,16 @@ const postBodySchema = z
 
     locationName: z.preprocess(
       trimOrEmpty,
-      z.string().min(1, "locationName is required").max(500, "locationName must be at most 500 characters")
+      z
+        .string()
+        .min(1, "locationName is required")
+        .max(500, "locationName must be at most 500 characters")
     ),
 
-    city: z.preprocess(emptyToUndefined, z.string().max(100, "city must be at most 100 characters").optional()),
+    city: z.preprocess(
+      emptyToUndefined,
+      z.string().max(100, "city must be at most 100 characters").optional()
+    ),
     country: z.preprocess(
       emptyToUndefined,
       z.string().max(100, "country must be at most 100 characters").optional()
@@ -93,7 +92,10 @@ const postBodySchema = z
 
     sentiment: z
       .preprocess(trimLowerOrEmpty, z.string())
-      .refine((v) => SENTIMENT_VALUES.includes(v), "sentiment must be one of: positive, neutral, negative"),
+      .refine(
+        (v) => SENTIMENT_VALUES.includes(v),
+        "sentiment must be one of: positive, neutral, negative"
+      ),
 
     privacy: z
       .preprocess(trimLowerOrEmpty, z.string())

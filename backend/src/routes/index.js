@@ -5,6 +5,8 @@ import authRoutes from "./auth.routes.js";
 import geocodeRoutes from "./geocode.routes.js";
 import uploadsRoutes from "./uploads.routes.js";
 import postsRoutes from "./posts.routes.js";
+import mapRoutes from "./map.routes.js";
+import aiRoutes from "./ai.routes.js";
 
 const router = Router();
 
@@ -20,5 +22,7 @@ router.use("/auth", authRoutes);
 router.use("/geocode", geocodeRoutes);
 router.use("/uploads", uploadsRoutes);
 router.use("/posts", postsRoutes);
+router.use("/map", mapRoutes);
+router.use("/ai", aiRoutes);
 
 export default router;

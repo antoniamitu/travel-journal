@@ -4,15 +4,11 @@ import { formatZodErrors } from "../utils/formatZodErrors.js";
 import { uploadsCleanupSchema } from "../validators/uploads.validator.js";
 import { buildSignedUploadPayload, cleanupUploads, getUploadFolderForUser } from "../services/cloudinary.service.js";
 import { checkUploadsLimit } from "../utils/uploadsRateLimit.js";
+import { setRetryAfterHeader } from "../utils/slidingWindowRateLimiter.js";
 import { ENV } from "../config/env.js";
 
 function devMeta(obj) {
   return ENV.NODE_ENV === "development" ? obj : {};
-}
-
-function setRetryAfterHeader(res, retryAfterMs) {
-  const seconds = Math.max(1, Math.ceil(Number(retryAfterMs || 0) / 1000));
-  res.set("Retry-After", String(seconds));
 }
 
 // requireAuth already guarantees req.userId is a positive integer.

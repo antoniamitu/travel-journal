@@ -1,21 +1,34 @@
-// backend/src/validators/query.validator.js
+// backend/src/validators/ai.validator.js
 import { z } from "zod";
 import { asNumberOrUndefined } from "./shared.js";
 
 const trimOrEmpty = (val) => (typeof val === "string" ? val.trim() : "");
 
-export const geocodeSearchSchema = z.object({
-  query: z.preprocess(
+const emptyToUndefined = (val) => {
+  const s = trimOrEmpty(val);
+  return s === "" ? undefined : s;
+};
+
+export const learnMoreSchema = z.object({
+  locationName: z.preprocess(
     trimOrEmpty,
     z
       .string()
-      .min(3, "Query must be at least 3 characters")
-      .max(120, "Query must be at most 120 characters")
-  )
-});
+      .min(1, "locationName is required")
+      .max(500, "locationName must be at most 500 characters")
+  ),
 
-export const geocodeReverseSchema = z.object({
-  lat: z.preprocess(
+  city: z.preprocess(
+    emptyToUndefined,
+    z.string().max(100, "city must be at most 100 characters").optional()
+  ),
+
+  country: z.preprocess(
+    emptyToUndefined,
+    z.string().max(100, "country must be at most 100 characters").optional()
+  ),
+
+  latitude: z.preprocess(
     asNumberOrUndefined,
     z
       .number({ invalid_type_error: "Latitude must be a number" })
@@ -23,7 +36,8 @@ export const geocodeReverseSchema = z.object({
       .min(-90, "Latitude must be between -90 and 90")
       .max(90, "Latitude must be between -90 and 90")
   ),
-  lng: z.preprocess(
+
+  longitude: z.preprocess(
     asNumberOrUndefined,
     z
       .number({ invalid_type_error: "Longitude must be a number" })

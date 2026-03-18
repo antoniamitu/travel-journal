@@ -6,6 +6,7 @@ import { geocodeSearchSchema, geocodeReverseSchema } from "../validators/query.v
 import { formatZodErrors } from "../utils/formatZodErrors.js";
 import { normalizeQuery } from "../utils/normalizeQuery.js";
 import { mapNominatimSearchResults, mapNominatimReverseResult } from "../utils/mapNominatim.js";
+import { setRetryAfterHeader } from "../utils/slidingWindowRateLimiter.js";
 import { nominatimQueue, canEnqueue, getQueueStats } from "../services/nominatimQueue.js";
 import { forwardGeocode, reverseGeocode } from "../services/nominatim.service.js";
 import { checkGeocodeLimit } from "../utils/geocodeRateLimit.js";
@@ -35,12 +36,6 @@ async function cleanupExpiredCache(prisma, cutoff) {
   } catch (err) {
     console.warn("[geocode] cache cleanup failed:", err?.message || err);
   }
-}
-
-function setRetryAfterHeader(res, retryAfterMs) {
-  // HTTP Retry-After is in seconds (integer)
-  const seconds = Math.max(1, Math.ceil(Number(retryAfterMs || 0) / 1000));
-  res.set("Retry-After", String(seconds));
 }
 
 export async function search(req, res) {
