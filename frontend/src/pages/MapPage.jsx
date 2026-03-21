@@ -41,6 +41,8 @@ const INITIAL_CENTER = [45.9432, 24.9668];
 const INITIAL_ZOOM = 6;
 const PANEL_THUMB_LIMIT = 3;
 const AI_COOLDOWN_MS = 60_000;
+const MOBILE_SHEET_CLOSE_THRESHOLD_PX = 90;
+const MOBILE_SHEET_MAX_DRAG_PX = 220;
 
 const markerIconCache = new Map();
 
@@ -565,6 +567,59 @@ function MapPostPanel({
     onRequestLearnMore?.();
   };
 
+  const touchStartYRef = useRef(null);
+  const [mobileDragOffsetY, setMobileDragOffsetY] = useState(0);
+  const [isMobileDragging, setIsMobileDragging] = useState(false);
+
+  const resetMobileDrag = useCallback(() => {
+    touchStartYRef.current = null;
+    setMobileDragOffsetY(0);
+    setIsMobileDragging(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      resetMobileDrag();
+    }
+  }, [isOpen, resetMobileDrag]);
+
+  const handleMobileHandleTouchStart = (e) => {
+    if (!isOpen) return;
+
+    const touch = e.touches?.[0];
+    if (!touch) return;
+
+    touchStartYRef.current = touch.clientY;
+    setIsMobileDragging(true);
+  };
+
+  const handleMobileHandleTouchMove = (e) => {
+    if (!isOpen || touchStartYRef.current == null) return;
+
+    const touch = e.touches?.[0];
+    if (!touch) return;
+
+    const rawDelta = touch.clientY - touchStartYRef.current;
+    const nextOffset = Math.max(0, Math.min(MOBILE_SHEET_MAX_DRAG_PX, rawDelta));
+
+    if (nextOffset > 0) {
+      e.preventDefault();
+    }
+
+    setMobileDragOffsetY(nextOffset);
+  };
+
+  const handleMobileHandleTouchEnd = () => {
+    if (!isOpen) return;
+
+    const shouldClose = mobileDragOffsetY >= MOBILE_SHEET_CLOSE_THRESHOLD_PX;
+    resetMobileDrag();
+
+    if (shouldClose) {
+      onClose?.();
+    }
+  };
+
   const panelBody = hasPost ? (
     <div className="flex h-full flex-col">
       <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
@@ -713,6 +768,12 @@ function MapPostPanel({
     </div>
   ) : null;
 
+  const mobileSheetStyle = {
+    transform: isOpen ? `translateY(${mobileDragOffsetY}px)` : "translateY(110%)",
+    opacity: isOpen ? 1 : 0,
+    transition: isMobileDragging ? "none" : "transform 300ms ease-out, opacity 300ms ease-out"
+  };
+
   return (
     <>
       <div className="pointer-events-none absolute inset-0 z-[1201] hidden md:block">
@@ -729,17 +790,29 @@ function MapPostPanel({
       </div>
 
       <div className="pointer-events-none absolute inset-0 z-[1201] md:hidden">
+        {isOpen ? (
+          <button
+            type="button"
+            aria-label="Close post preview"
+            onClick={onClose}
+            className="pointer-events-auto absolute inset-0 bg-slate-950/20"
+          />
+        ) : null}
+
         <div
-          className={[
-            "pointer-events-auto absolute inset-x-3 bottom-3 h-[68%] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl",
-            "transition-all duration-300 ease-out",
-            isOpen ? "translate-y-0 opacity-100" : "translate-y-[110%] opacity-0"
-          ].join(" ")}
+          className="pointer-events-auto absolute inset-x-3 bottom-3 h-[68%] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
           aria-hidden={!isOpen}
+          style={mobileSheetStyle}
         >
           {isOpen ? (
             <>
-              <div className="flex justify-center pt-2">
+              <div
+                className="flex cursor-grab justify-center pt-2 active:cursor-grabbing"
+                onTouchStart={handleMobileHandleTouchStart}
+                onTouchMove={handleMobileHandleTouchMove}
+                onTouchEnd={handleMobileHandleTouchEnd}
+                onTouchCancel={handleMobileHandleTouchEnd}
+              >
                 <div className="h-1.5 w-10 rounded-full bg-slate-300" />
               </div>
               <div className="h-[calc(100%-12px)]">{panelBody}</div>

@@ -27,9 +27,9 @@ L.Icon.Default.mergeOptions({
 const MAX_IMAGES = 6;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const DEFAULT_CENTER = [45.9432, 24.9668];
-const TILE_URL = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+const TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const TILE_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 const EMPTY_FORM = {
   title: "",
