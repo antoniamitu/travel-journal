@@ -1,4 +1,5 @@
 // backend/src/controllers/posts.controller.js
+import { Prisma } from "@prisma/client";
 import { getPrisma } from "../config/prisma.js";
 import { ENV } from "../config/env.js";
 import { HttpError } from "../utils/httpError.js";
@@ -9,7 +10,7 @@ import {
   updatePostSchema
 } from "../validators/post.validator.js";
 import { cleanupUploads, getUploadFolderForUser } from "../services/cloudinary.service.js";
-import { mapPostToApi } from "../mappers/post.mapper.js";
+import { mapMapFeedRowToApi, mapPostToApi } from "../mappers/post.mapper.js";
 
 const fixNegZero = (n) => (Object.is(n, -0) ? 0 : n);
 
@@ -53,6 +54,58 @@ const POST_OWNERSHIP_SELECT = {
     }
   }
 };
+
+const DEFAULT_FEED_PAGE = 1;
+const DEFAULT_FEED_LIMIT = 12;
+const MAX_FEED_LIMIT = 24;
+
+const FEED_POSTS_SELECT_SQL = Prisma.sql`
+  SELECT
+    p.id,
+    p.user_id,
+    u.username,
+    p.title,
+    CASE
+      WHEN char_length(p.content) > 220 THEN left(p.content, 220) || '...'
+      ELSE p.content
+    END AS content_preview,
+    p.location_name,
+    p.city,
+    p.country,
+    p.latitude,
+    p.longitude,
+    p.sentiment,
+    p.privacy,
+    p.created_at,
+    COALESCE(img_count.image_count, 0) AS image_count,
+    img_first.preview_image,
+    COALESCE(img_strip.preview_images, '[]'::json) AS preview_images
+  FROM posts p
+  INNER JOIN users u
+    ON u.id = p.user_id
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*)::int AS image_count
+    FROM post_images pi
+    WHERE pi.post_id = p.id
+  ) img_count ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT pi.secure_url AS preview_image
+    FROM post_images pi
+    WHERE pi.post_id = p.id
+    ORDER BY pi.display_order ASC, pi.id ASC
+    LIMIT 1
+  ) img_first ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT json_agg(preview.secure_url ORDER BY preview.display_order ASC, preview.id ASC) AS preview_images
+    FROM (
+      SELECT pi.id, pi.secure_url, pi.display_order
+      FROM post_images pi
+      WHERE pi.post_id = p.id
+      ORDER BY pi.display_order ASC, pi.id ASC
+      LIMIT 3
+    ) preview
+  ) img_strip ON TRUE
+`;
 
 function parseUrlSafe(u) {
   try {
@@ -112,15 +165,97 @@ function shouldAttemptUnattachedCleanup(err, candidatePublicIds) {
     return false;
   }
 
-  // Known case: these publicIds already belong to another saved post.
-  // Querying DB again just to rediscover that fact is wasted work.
   if (err?.code === "P2002" && getP2002Target(err).includes("public_id")) {
     return false;
   }
 
-  // For unknown DB failures, timeouts, partial transaction failures, etc.
-  // the cleanup safety net is still worth attempting.
   return true;
+}
+
+function normalizePreviewImages(value) {
+  const sanitize = (items) =>
+    items.filter((item) => typeof item === "string" && item.trim() !== "");
+
+  if (Array.isArray(value)) {
+    return sanitize(value);
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? sanitize(parsed) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function mapFeedRowToApi(row, viewerUserId) {
+  const base = mapMapFeedRowToApi(row);
+  const isOwner = row.user_id === viewerUserId;
+
+  return {
+    ...base,
+    city: row.city || null,
+    country: row.country || null,
+    previewImages: normalizePreviewImages(row.preview_images),
+    isOwner,
+    canEdit: isOwner,
+    canDelete: isOwner
+  };
+}
+
+function parseFeedListQuery(query) {
+  const errors = {};
+  let page = DEFAULT_FEED_PAGE;
+  let limit = DEFAULT_FEED_LIMIT;
+
+  if (query?.page != null && String(query.page).trim() !== "") {
+    const rawPage = String(query.page).trim();
+
+    if (!/^[1-9]\d*$/.test(rawPage)) {
+      errors.page = "page must be a positive integer";
+    } else {
+      const parsedPage = Number(rawPage);
+
+      if (!Number.isSafeInteger(parsedPage)) {
+        errors.page = "page is too large";
+      } else {
+        page = parsedPage;
+      }
+    }
+  }
+
+  if (query?.limit != null && String(query.limit).trim() !== "") {
+    const rawLimit = String(query.limit).trim();
+
+    if (!/^[1-9]\d*$/.test(rawLimit)) {
+      errors.limit = "limit must be a positive integer";
+    } else {
+      const parsedLimit = Number(rawLimit);
+
+      if (!Number.isSafeInteger(parsedLimit)) {
+        errors.limit = "limit is too large";
+      } else if (parsedLimit > MAX_FEED_LIMIT) {
+        errors.limit = `limit must be between 1 and ${MAX_FEED_LIMIT}`;
+      } else {
+        limit = parsedLimit;
+      }
+    }
+  }
+
+  const offset = (page - 1) * limit;
+  if (!Number.isSafeInteger(offset)) {
+    errors.page = "page is too large";
+  }
+
+  if (Object.keys(errors).length > 0) {
+    throw new HttpError(400, "Validation failed", errors);
+  }
+
+  return { page, limit, offset };
 }
 
 async function validateIncomingImagesForUser(userId, images) {
@@ -301,6 +436,40 @@ export async function create(req, res) {
   }
 }
 
+// Step 4.x — GET /api/posts
+export async function listFeed(req, res) {
+  const prisma = getPrisma();
+  const userId = req.userId;
+  const { page, limit, offset } = parseFeedListQuery(req.query);
+
+  const rows = await prisma.$queryRaw(
+    Prisma.sql`
+      ${FEED_POSTS_SELECT_SQL}
+      WHERE
+        p.privacy = 'public'
+        AND p.user_id <> ${userId}
+      ORDER BY p.created_at DESC, p.id DESC
+      LIMIT ${limit + 1}
+      OFFSET ${offset}
+    `
+  );
+
+  const hasMore = rows.length > limit;
+  const visibleRows = hasMore ? rows.slice(0, limit) : rows;
+  const posts = visibleRows.map((row) => mapFeedRowToApi(row, userId));
+
+  return res.status(200).json({
+    ok: true,
+    posts,
+    pagination: {
+      page,
+      limit,
+      hasMore,
+      nextPage: hasMore ? page + 1 : null
+    }
+  });
+}
+
 // Step 2.2 — GET /api/posts/:id
 export async function getById(req, res) {
   const parsed = postIdParamsSchema.safeParse(req.params);
@@ -349,8 +518,6 @@ export async function update(req, res) {
 
   await validateIncomingImagesForUser(userId, images);
 
-  // No-leak consistency:
-  // only search among posts owned by the current user.
   const existingPost = await prisma.post.findFirst({
     where: {
       id: postId,
@@ -478,9 +645,6 @@ export async function remove(req, res) {
   const userId = req.userId;
   const postId = parsed.data.id;
 
-  // No-leak rule:
-  // only search among posts owned by the current user.
-  // public non-owner and private non-owner both become 404.
   const post = await prisma.post.findFirst({
     where: {
       id: postId,
@@ -503,8 +667,6 @@ export async function remove(req, res) {
 
   const publicIds = post.images.map((img) => img.public_id);
 
-  // Source of truth first:
-  // delete DB record first so the app never ends up showing a post whose images were already deleted.
   try {
     await prisma.post.delete({
       where: {
@@ -519,8 +681,6 @@ export async function remove(req, res) {
     throw err;
   }
 
-  // Best-effort external cleanup after DB success.
-  // For real post deletion we explicitly invalidate CDN caches too.
   let cleanupResult = {
     deleted: [],
     failed: publicIds.slice()

@@ -149,7 +149,7 @@ export default function NavBar() {
 
   return (
     <nav className={`sticky top-0 z-[1100] border-b ${shellClass}`}>
-      <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3">
+      <div className="mx-auto flex h-[72px] max-w-7xl items-center gap-4 px-4">
         <Link
           to="/feed"
           className={`flex shrink-0 items-center gap-3 text-lg font-bold transition ${brandTextClass}`}

@@ -4,7 +4,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireJsonBody } from "../utils/requireJsonBody.js";
 import { postsReadLimiter } from "../middleware/postsReadLimiter.js";
-import { create, getById, remove, update } from "../controllers/posts.controller.js";
+import { create, getById, listFeed, remove, update } from "../controllers/posts.controller.js";
 
 const router = Router();
 
@@ -14,6 +14,9 @@ router.get(
     res.status(200).json({ ok: true, scope: "posts" });
   })
 );
+
+// Step 4.x — feed list
+router.get("/", requireAuth, postsReadLimiter, asyncHandler(listFeed));
 
 // Step 2.1
 router.post("/", requireAuth, requireJsonBody, asyncHandler(create));

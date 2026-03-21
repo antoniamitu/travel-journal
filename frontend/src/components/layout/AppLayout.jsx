@@ -15,7 +15,7 @@ export default function AppLayout() {
   return (
     <div
       className={[
-        "flex min-h-screen flex-col",
+        "flex min-h-screen flex-col overflow-x-hidden",
         postsWorkspace ? "bg-slate-100" : "bg-[oklch(45%_0.085_224.283)]"
       ].join(" ")}
     >
@@ -23,7 +23,7 @@ export default function AppLayout() {
 
       <div className="flex min-h-0 flex-1">
         {!postsWorkspace && <Sidebar />}
-        <main className="min-w-0 flex-1">
+        <main className="relative z-0 min-w-0 flex-1">
           <Outlet />
         </main>
       </div>
