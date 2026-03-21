@@ -3,14 +3,13 @@ import { z } from "zod";
 import { SENTIMENT_VALUES } from "../constants/sentiment.js";
 import { PRIVACY_VALUES } from "../constants/privacy.js";
 import { asNumberOrUndefined } from "./shared.js";
+import {
+  normalizeLocationDisplayText,
+  normalizeOptionalLocationText
+} from "../utils/locationText.js";
 
 const trimOrEmpty = (val) => (typeof val === "string" ? val.trim() : "");
 const trimLowerOrEmpty = (val) => (typeof val === "string" ? val.trim().toLowerCase() : "");
-
-const emptyToUndefined = (val) => {
-  const s = trimOrEmpty(val);
-  return s === "" ? undefined : s;
-};
 
 // allow dots too, but still forbid traversal-like patterns
 const PUBLIC_ID_RE = /^[a-zA-Z0-9/_.-]+$/;
@@ -74,7 +73,7 @@ const postBodySchema = z
     ),
 
     locationName: z.preprocess(
-      trimOrEmpty,
+      normalizeLocationDisplayText,
       z
         .string()
         .min(1, "locationName is required")
@@ -82,11 +81,12 @@ const postBodySchema = z
     ),
 
     city: z.preprocess(
-      emptyToUndefined,
+      normalizeOptionalLocationText,
       z.string().max(100, "city must be at most 100 characters").optional()
     ),
+
     country: z.preprocess(
-      emptyToUndefined,
+      normalizeOptionalLocationText,
       z.string().max(100, "country must be at most 100 characters").optional()
     ),
 

@@ -7,6 +7,7 @@ import uploadsRoutes from "./uploads.routes.js";
 import postsRoutes from "./posts.routes.js";
 import mapRoutes from "./map.routes.js";
 import aiRoutes from "./ai.routes.js";
+import usersRoutes from "./users.routes.js";
 
 const router = Router();
 
@@ -19,6 +20,7 @@ router.get("/health", (req, res) => {
 });
 
 router.use("/auth", authRoutes);
+router.use("/users", usersRoutes);
 router.use("/geocode", geocodeRoutes);
 router.use("/uploads", uploadsRoutes);
 router.use("/posts", postsRoutes);
