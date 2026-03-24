@@ -6,6 +6,8 @@ import LoginPage from "./pages/LoginPage.jsx";
 import RegisterPage from "./pages/RegisterPage.jsx";
 import FeedPage from "./pages/FeedPage.jsx";
 import MapPage from "./pages/MapPage.jsx";
+import ProfilePage from "./pages/ProfilePage.jsx";
+import UserProfilePage from "./pages/UserProfilePage.jsx";
 import PostDetailPage from "./pages/PostDetailPage.jsx";
 import PostEditorPage from "./pages/PostEditorPage.jsx";
 import ProtectedRoute from "./components/auth/ProtectedRoute.jsx";
@@ -43,6 +45,8 @@ export default function App() {
       >
         <Route path="/feed" element={<FeedPage />} />
         <Route path="/map" element={<MapPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/users/:username" element={<UserProfilePage />} />
 
         <Route path="/posts/new" element={<PostEditorPage />} />
         <Route path="/posts/:id" element={<PostDetailPage />} />

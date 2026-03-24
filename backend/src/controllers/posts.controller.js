@@ -58,6 +58,12 @@ const POST_OWNERSHIP_SELECT = {
 const DEFAULT_FEED_PAGE = 1;
 const DEFAULT_FEED_LIMIT = 12;
 const MAX_FEED_LIMIT = 24;
+const MAX_FEED_QUERY_LENGTH = 120;
+const DEFAULT_SUGGEST_LIMIT = 5;
+const MAX_SUGGEST_LIMIT = 10;
+const ALLOWED_FEED_SENTIMENTS = new Set(["positive", "neutral", "negative"]);
+const COMBINING_MARKS_RE = /[\u0300-\u036f]/g;
+const NON_ALPHANUMERIC_RE = /[^a-z0-9]+/g;
 
 const FEED_POSTS_SELECT_SQL = Prisma.sql`
   SELECT
@@ -207,10 +213,62 @@ function mapFeedRowToApi(row, viewerUserId) {
   };
 }
 
+function normalizeLooseSearchKey(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value
+    .trim()
+    .normalize("NFKD")
+    .replace(COMBINING_MARKS_RE, "")
+    .toLowerCase()
+    .replace(NON_ALPHANUMERIC_RE, "");
+}
+
+function buildSuggestionLabel(kind, rawLabel, city, country) {
+  const baseLabel = String(rawLabel || "").trim();
+  if (!baseLabel) return "";
+
+  if (kind === "city") {
+    return country ? `${baseLabel}, ${country}` : baseLabel;
+  }
+
+  if (kind !== "place") {
+    return baseLabel;
+  }
+
+  const baseKey = normalizeLooseSearchKey(baseLabel);
+  const extras = [];
+
+  if (city) {
+    const cityKey = normalizeLooseSearchKey(city);
+    if (cityKey && !baseKey.includes(cityKey)) {
+      extras.push(city);
+    }
+  }
+
+  if (country) {
+    const countryKey = normalizeLooseSearchKey(country);
+    if (countryKey && !baseKey.includes(countryKey)) {
+      extras.push(country);
+    }
+  }
+
+  if (extras.length === 0) {
+    return baseLabel;
+  }
+
+  return `${baseLabel}, ${extras.join(", ")}`;
+}
+
 function parseFeedListQuery(query) {
   const errors = {};
   let page = DEFAULT_FEED_PAGE;
   let limit = DEFAULT_FEED_LIMIT;
+  let q;
+  let qSearchKey;
+  let sentiment;
 
   if (query?.page != null && String(query.page).trim() !== "") {
     const rawPage = String(query.page).trim();
@@ -246,6 +304,32 @@ function parseFeedListQuery(query) {
     }
   }
 
+  if (query?.q != null) {
+    const rawQ = String(query.q).trim();
+
+    if (rawQ.length > MAX_FEED_QUERY_LENGTH) {
+      errors.q = `q must be at most ${MAX_FEED_QUERY_LENGTH} characters`;
+    } else if (rawQ !== "") {
+      q = rawQ;
+      qSearchKey = normalizeLooseSearchKey(rawQ);
+
+      if (!qSearchKey) {
+        q = undefined;
+        qSearchKey = undefined;
+      }
+    }
+  }
+
+  if (query?.sentiment != null && String(query.sentiment).trim() !== "") {
+    const rawSentiment = String(query.sentiment).trim().toLowerCase();
+
+    if (!ALLOWED_FEED_SENTIMENTS.has(rawSentiment)) {
+      errors.sentiment = "sentiment must be one of: positive, neutral, negative";
+    } else {
+      sentiment = rawSentiment;
+    }
+  }
+
   const offset = (page - 1) * limit;
   if (!Number.isSafeInteger(offset)) {
     errors.page = "page is too large";
@@ -255,7 +339,48 @@ function parseFeedListQuery(query) {
     throw new HttpError(400, "Validation failed", errors);
   }
 
-  return { page, limit, offset };
+  return { page, limit, offset, q, qSearchKey, sentiment };
+}
+
+function parseLocationSuggestQuery(query) {
+  const errors = {};
+  let q = "";
+  let qSearchKey = "";
+  let limit = DEFAULT_SUGGEST_LIMIT;
+
+  if (query?.q != null) {
+    q = String(query.q).trim();
+  }
+
+  if (q.length > MAX_FEED_QUERY_LENGTH) {
+    errors.q = `q must be at most ${MAX_FEED_QUERY_LENGTH} characters`;
+  }
+
+  if (query?.limit != null && String(query.limit).trim() !== "") {
+    const rawLimit = String(query.limit).trim();
+
+    if (!/^[1-9]\d*$/.test(rawLimit)) {
+      errors.limit = "limit must be a positive integer";
+    } else {
+      const parsedLimit = Number(rawLimit);
+
+      if (!Number.isSafeInteger(parsedLimit)) {
+        errors.limit = "limit is too large";
+      } else if (parsedLimit > MAX_SUGGEST_LIMIT) {
+        errors.limit = `limit must be between 1 and ${MAX_SUGGEST_LIMIT}`;
+      } else {
+        limit = parsedLimit;
+      }
+    }
+  }
+
+  qSearchKey = normalizeLooseSearchKey(q);
+
+  if (Object.keys(errors).length > 0) {
+    throw new HttpError(400, "Validation failed", errors);
+  }
+
+  return { q, qSearchKey, limit };
 }
 
 async function validateIncomingImagesForUser(userId, images) {
@@ -392,7 +517,7 @@ export async function create(req, res) {
         user_id: userId,
         title: parsed.data.title,
         content: parsed.data.content,
-        latitude,
+        latitude,       
         longitude,
         location_name: parsed.data.locationName,
         city: parsed.data.city,
@@ -440,7 +565,29 @@ export async function create(req, res) {
 export async function listFeed(req, res) {
   const prisma = getPrisma();
   const userId = req.userId;
-  const { page, limit, offset } = parseFeedListQuery(req.query);
+  const { page, limit, offset, qSearchKey, sentiment } = parseFeedListQuery(req.query);
+
+  const searchSql = qSearchKey
+    ? Prisma.sql`
+        AND (
+          regexp_replace(unaccent(lower(COALESCE(p.location_name, ''))), '[^a-z0-9]+', '', 'g') LIKE ${`%${qSearchKey}%`}
+          OR regexp_replace(unaccent(lower(COALESCE(p.city, ''))), '[^a-z0-9]+', '', 'g') LIKE ${`%${qSearchKey}%`}
+          OR regexp_replace(unaccent(lower(COALESCE(p.country, ''))), '[^a-z0-9]+', '', 'g') LIKE ${`%${qSearchKey}%`}
+          OR regexp_replace(
+            unaccent(
+              lower(
+                concat_ws(' ', COALESCE(p.location_name, ''), COALESCE(p.city, ''), COALESCE(p.country, ''))
+              )
+            ),
+            '[^a-z0-9]+',
+            '',
+            'g'
+          ) LIKE ${`%${qSearchKey}%`}
+        )
+      `
+    : Prisma.empty;
+
+  const sentimentSql = sentiment ? Prisma.sql` AND p.sentiment = ${sentiment}` : Prisma.empty;
 
   const rows = await prisma.$queryRaw(
     Prisma.sql`
@@ -448,6 +595,8 @@ export async function listFeed(req, res) {
       WHERE
         p.privacy = 'public'
         AND p.user_id <> ${userId}
+        ${sentimentSql}
+        ${searchSql}
       ORDER BY p.created_at DESC, p.id DESC
       LIMIT ${limit + 1}
       OFFSET ${offset}
@@ -467,6 +616,139 @@ export async function listFeed(req, res) {
       hasMore,
       nextPage: hasMore ? page + 1 : null
     }
+  });
+}
+
+// Step 5.3 — GET /api/posts/locations/suggest
+export async function suggestLocations(req, res) {
+  const prisma = getPrisma();
+  const userId = req.userId;
+  const { qSearchKey, limit } = parseLocationSuggestQuery(req.query);
+
+  if (!qSearchKey || qSearchKey.length < 3) {
+    return res.status(200).json({
+      ok: true,
+      suggestions: []
+    });
+  }
+
+  const rows = await prisma.$queryRaw(
+    Prisma.sql`
+      WITH candidates AS (
+        SELECT
+          'place'::text AS kind,
+          p.location_name AS label,
+          p.location_name AS query_value,
+          p.city,
+          p.country,
+          MIN(p.created_at) AS first_seen_at
+        FROM posts p
+        WHERE
+          p.privacy = 'public'
+          AND p.user_id <> ${userId}
+          AND p.location_name IS NOT NULL
+          AND btrim(p.location_name) <> ''
+        GROUP BY p.location_name, p.city, p.country
+
+        UNION ALL
+
+        SELECT
+          'city'::text AS kind,
+          p.city AS label,
+          p.city AS query_value,
+          p.city,
+          p.country,
+          MIN(p.created_at) AS first_seen_at
+        FROM posts p
+        WHERE
+          p.privacy = 'public'
+          AND p.user_id <> ${userId}
+          AND p.city IS NOT NULL
+          AND btrim(p.city) <> ''
+        GROUP BY p.city, p.country
+
+        UNION ALL
+
+        SELECT
+          'country'::text AS kind,
+          p.country AS label,
+          p.country AS query_value,
+          NULL::text AS city,
+          p.country,
+          MIN(p.created_at) AS first_seen_at
+        FROM posts p
+        WHERE
+          p.privacy = 'public'
+          AND p.user_id <> ${userId}
+          AND p.country IS NOT NULL
+          AND btrim(p.country) <> ''
+        GROUP BY p.country
+      )
+      SELECT
+        kind,
+        label,
+        query_value,
+        city,
+        country,
+        first_seen_at
+      FROM candidates
+      WHERE regexp_replace(unaccent(lower(COALESCE(query_value, ''))), '[^a-z0-9]+', '', 'g') LIKE ${`${qSearchKey}%`}
+      ORDER BY
+        CASE kind
+          WHEN 'place' THEN 0
+          WHEN 'city' THEN 1
+          ELSE 2
+        END ASC,
+        char_length(label) ASC,
+        label ASC,
+        first_seen_at DESC
+      LIMIT ${limit * 3}
+    `
+  );
+
+  const suggestions = [];
+  const seen = new Set();
+
+  for (const row of rows) {
+    const kind = String(row.kind || "");
+    const rawLabel = String(row.label || "").trim();
+    const rawQueryValue = String(row.query_value || "").trim();
+    const city = typeof row.city === "string" && row.city.trim() ? row.city.trim() : null;
+    const country =
+      typeof row.country === "string" && row.country.trim() ? row.country.trim() : null;
+
+    if (!rawLabel || !rawQueryValue) continue;
+
+    const label = buildSuggestionLabel(kind, rawLabel, city, country);
+
+    if (!label) continue;
+
+    const dedupeKey = [
+      kind,
+      normalizeLooseSearchKey(rawLabel),
+      normalizeLooseSearchKey(rawQueryValue),
+      normalizeLooseSearchKey(city || ""),
+      normalizeLooseSearchKey(country || "")
+    ].join("::");
+    if (seen.has(dedupeKey)) continue;
+
+    seen.add(dedupeKey);
+    suggestions.push({
+      kind,
+      label,
+      queryValue: rawQueryValue,
+      city,
+      country
+    });
+
+    if (suggestions.length >= limit) {
+      break;
+    }
+  }
+
+  return res.status(200).json({
+    ok: true,
+    suggestions
   });
 }
 
@@ -495,7 +777,6 @@ export async function getById(req, res) {
 
   return res.status(200).json({ ok: true, post: mapPostToApi(post, userId) });
 }
-
 // Step 2.4 — PUT /api/posts/:id
 export async function update(req, res) {
   const paramsParsed = postIdParamsSchema.safeParse(req.params);

@@ -1,12 +1,24 @@
-// frontend/src/pages/FeedPage.jsx
+//src/pages/FeedPage.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/axios.js";
 import { listFeedPosts } from "../api/posts.js";
 import { useLocationContext } from "../hooks/useLocationContext.js";
 
 const DEFAULT_PAGE_SIZE = 12;
 const AI_COOLDOWN_MS = 60_000;
+
+const DEFAULT_FEED_FILTERS = {
+  q: "",
+  sentiment: "all"
+};
+
+const FEED_SENTIMENT_OPTIONS = [
+  { key: "all", label: "All" },
+  { key: "positive", label: "Positive" },
+  { key: "neutral", label: "Neutral" },
+  { key: "negative", label: "Negative" }
+];
 
 function formatDate(value) {
   if (!value) return "—";
@@ -187,6 +199,10 @@ function buildMapSelection(post) {
   };
 }
 
+function hasActiveFeedFilters(filters) {
+  return Boolean(String(filters?.q || "").trim()) || filters?.sentiment !== "all";
+}
+
 function SafeFeedImage({ src, alt, className }) {
   const [hasError, setHasError] = useState(false);
 
@@ -215,18 +231,108 @@ function SafeFeedImage({ src, alt, className }) {
 
 function FeedHero() {
   return (
-    <section className="rounded-[28px] border border-slate-200/80 bg-white px-6 py-6 shadow-sm lg:px-8">
+    <section className="rounded-[32px] border border-slate-200/80 bg-white px-6 py-7 shadow-sm lg:px-8">
       <div>
-        <div className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-700">
+        <div className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700">
           Travel feed
         </div>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">
-          Public travel posts
+        <h1 className="mt-2 text-4xl font-bold tracking-tight text-slate-900">
+          Public travel posts ✨
         </h1>
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 lg:text-base">
+        <p className="mt-4 max-w-4xl text-base leading-8 text-slate-600">
           Browse public posts from other travelers, open places on the map, or ask AI for quick
           historical and cultural context.
         </p>
+      </div>
+    </section>
+  );
+}
+
+function FeedFiltersBar({ filters, isBusy, onSentimentChange, onClearSentiment, onClearSearch }) {
+  const hasFilters = hasActiveFeedFilters(filters);
+
+  return (
+    <section className="rounded-[28px] border border-slate-200 bg-white px-5 py-5 shadow-sm lg:px-6">
+      <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Feed filters
+            </div>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
+              Refine the current search
+            </h2>
+            <p className="mt-2 text-sm text-slate-600">
+              Use the top navigation search bar for places, then narrow the feed here by sentiment.
+            </p>
+          </div>
+
+          {hasFilters ? (
+            <div className="flex flex-wrap gap-3">
+              {filters.q ? (
+                <button
+                  type="button"
+                  onClick={onClearSearch}
+                  disabled={isBusy}
+                  className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Clear search
+                </button>
+              ) : null}
+
+              {filters.sentiment !== "all" ? (
+                <button
+                  type="button"
+                  onClick={onClearSentiment}
+                  disabled={isBusy}
+                  className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Clear sentiment
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          {FEED_SENTIMENT_OPTIONS.map((option) => {
+            const active = filters.sentiment === option.key;
+
+            return (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => onSentimentChange(option.key)}
+                disabled={isBusy}
+                className={[
+                  "inline-flex min-h-10 items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition",
+                  active
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                  isBusy ? "disabled:cursor-not-allowed disabled:opacity-60" : ""
+                ].join(" ")}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {hasFilters ? (
+          <div className="flex flex-wrap gap-2">
+            {filters.q ? (
+              <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                Search: {filters.q}
+              </span>
+            ) : null}
+
+            {filters.sentiment !== "all" ? (
+              <span className="inline-flex items-center rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 ring-1 ring-violet-200">
+                Sentiment: {filters.sentiment}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </section>
   );
@@ -268,12 +374,18 @@ function FeedSkeletonCard() {
   );
 }
 
-function EmptyFeedState() {
+function EmptyFeedState({ filters }) {
+  const hasFilters = hasActiveFeedFilters(filters);
+
   return (
     <section className="rounded-[28px] border border-dashed border-slate-300 bg-white px-6 py-10 text-center shadow-sm">
-      <h2 className="text-2xl font-semibold text-slate-900">No public posts yet</h2>
+      <h2 className="text-2xl font-semibold text-slate-900">
+        {hasFilters ? "No posts match your filters" : "No public posts yet"}
+      </h2>
       <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-        There are no public posts from other travelers yet. Check back later or explore the map.
+        {hasFilters
+          ? "Try clearing the current search or removing the sentiment filter to see more results."
+          : "There are no public posts from other travelers yet. Check back later or explore the map."}
       </p>
 
       <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
@@ -427,7 +539,12 @@ function FeedPostCard({ post, aiState, aiRemainingSeconds, onRequestLearnMore, o
           </h2>
 
           <div className="mt-3 flex flex-col gap-1 text-sm text-slate-500 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4">
-            <span>By @{post.username}</span>
+            <Link
+              to={`/users/${encodeURIComponent(post.username)}`}
+              className="font-semibold text-emerald-700 transition hover:text-emerald-800 hover:underline"
+            >
+              By @{post.username}
+            </Link>
             <span>📍 {post.locationName}</span>
             {(post.city || post.country) && (
               <span>{dedupeParts([post.city, post.country]).join(", ")}</span>
@@ -531,8 +648,19 @@ function FeedPostCard({ post, aiState, aiRemainingSeconds, onRequestLearnMore, o
   );
 }
 
+function getFiltersFromSearchParams(searchParams) {
+  const q = String(searchParams.get("q") || "").trim();
+  const rawSentiment = String(searchParams.get("sentiment") || "").trim().toLowerCase();
+
+  return {
+    q,
+    sentiment: ["positive", "neutral", "negative"].includes(rawSentiment) ? rawSentiment : "all"
+  };
+}
+
 export default function FeedPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { setSelectedPlace } = useLocationContext();
 
   const [posts, setPosts] = useState([]);
@@ -552,10 +680,19 @@ export default function FeedPage() {
 
   const feedAbortRef = useRef(null);
   const feedReqIdRef = useRef(0);
-  const lastLoadAttemptRef = useRef({ page: 1, append: false });
+  const lastLoadAttemptRef = useRef({
+    page: 1,
+    append: false,
+    filters: DEFAULT_FEED_FILTERS
+  });
 
   const aiAbortByPostIdRef = useRef(new Map());
   const aiReqIdByPostIdRef = useRef(new Map());
+
+  const effectiveFilters = useMemo(
+    () => getFiltersFromSearchParams(searchParams),
+    [searchParams]
+  );
 
   useEffect(() => {
     return () => {
@@ -587,7 +724,7 @@ export default function FeedPage() {
     return () => window.clearInterval(intervalId);
   }, [aiByPostId]);
 
-  const loadFeedPage = useCallback(async (pageToLoad, append = false) => {
+  const loadFeedPage = useCallback(async (pageToLoad, append = false, filtersOverride = DEFAULT_FEED_FILTERS) => {
     if (feedAbortRef.current) {
       feedAbortRef.current.abort();
     }
@@ -596,7 +733,16 @@ export default function FeedPage() {
     feedAbortRef.current = controller;
 
     const reqId = (feedReqIdRef.current += 1);
-    lastLoadAttemptRef.current = { page: pageToLoad, append };
+    const normalizedFilters = {
+      q: String(filtersOverride?.q || "").trim(),
+      sentiment: filtersOverride?.sentiment || "all"
+    };
+
+    lastLoadAttemptRef.current = {
+      page: pageToLoad,
+      append,
+      filters: normalizedFilters
+    };
 
     if (append) {
       setIsLoadingMore(true);
@@ -610,7 +756,11 @@ export default function FeedPage() {
       const result = await listFeedPosts(
         {
           page: pageToLoad,
-          limit: DEFAULT_PAGE_SIZE
+          limit: DEFAULT_PAGE_SIZE,
+          ...(normalizedFilters.q ? { q: normalizedFilters.q } : {}),
+          ...(normalizedFilters.sentiment !== "all"
+            ? { sentiment: normalizedFilters.sentiment }
+            : {})
         },
         {
           signal: controller.signal,
@@ -646,6 +796,8 @@ export default function FeedPage() {
         setFeedError(message || "Too many requests. Please slow down.");
       } else if (status === 401) {
         setFeedError("Authentication required.");
+      } else if (status === 400) {
+        setFeedError(message || "The current feed filters are invalid. Please adjust them and try again.");
       } else {
         setFeedError("Could not load the feed right now. Please try again.");
       }
@@ -665,8 +817,15 @@ export default function FeedPage() {
   }, []);
 
   useEffect(() => {
-    loadFeedPage(1, false);
-  }, [loadFeedPage]);
+    setPosts([]);
+    setPagination({
+      page: 1,
+      limit: DEFAULT_PAGE_SIZE,
+      hasMore: false,
+      nextPage: null
+    });
+    loadFeedPage(1, false, effectiveFilters);
+  }, [effectiveFilters, loadFeedPage]);
 
   const requestLearnMore = useCallback(async (post) => {
     if (!post?.id) return;
@@ -807,6 +966,34 @@ export default function FeedPage() {
     return out;
   }, [aiByPostId, tickNowMs]);
 
+  const handleSentimentChange = useCallback(
+    (nextSentiment) => {
+      const params = new URLSearchParams(searchParams);
+      const normalizedSentiment = String(nextSentiment || "all").toLowerCase();
+
+      if (normalizedSentiment === "all") {
+        params.delete("sentiment");
+      } else {
+        params.set("sentiment", normalizedSentiment);
+      }
+
+      setSearchParams(params, { replace: false });
+    },
+    [searchParams, setSearchParams]
+  );
+
+  const handleClearSentiment = useCallback(() => {
+    const params = new URLSearchParams(searchParams);
+    params.delete("sentiment");
+    setSearchParams(params, { replace: false });
+  }, [searchParams, setSearchParams]);
+
+  const handleClearSearch = useCallback(() => {
+    const params = new URLSearchParams(searchParams);
+    params.delete("q");
+    setSearchParams(params, { replace: false });
+  }, [searchParams, setSearchParams]);
+
   const showBlockingError = !isInitialLoading && Boolean(feedError) && posts.length === 0;
 
   let mainContent = null;
@@ -821,7 +1008,7 @@ export default function FeedPage() {
   } else if (showBlockingError) {
     mainContent = null;
   } else if (posts.length === 0) {
-    mainContent = <EmptyFeedState />;
+    mainContent = <EmptyFeedState filters={effectiveFilters} />;
   } else {
     mainContent = (
       <div className="space-y-5">
@@ -840,8 +1027,8 @@ export default function FeedPage() {
   }
 
   const retryLastRequest = () => {
-    const { page, append } = lastLoadAttemptRef.current;
-    loadFeedPage(page, append);
+    const { page, append, filters } = lastLoadAttemptRef.current;
+    loadFeedPage(page, append, filters);
   };
 
   return (
@@ -849,6 +1036,14 @@ export default function FeedPage() {
       <div className="w-full px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
         <div className="space-y-5">
           <FeedHero />
+
+          <FeedFiltersBar
+            filters={effectiveFilters}
+            isBusy={isInitialLoading || isLoadingMore}
+            onSentimentChange={handleSentimentChange}
+            onClearSentiment={handleClearSentiment}
+            onClearSearch={handleClearSearch}
+          />
 
           {feedError ? (
             <section className="rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
@@ -874,13 +1069,13 @@ export default function FeedPage() {
               <button
                 type="button"
                 onClick={() => {
-                  if (isLoadingMore || !pagination.nextPage) return;
-                  loadFeedPage(pagination.nextPage, true);
+                  if (isLoadingMore || isInitialLoading || !pagination.nextPage) return;
+                  loadFeedPage(pagination.nextPage, true, effectiveFilters);
                 }}
-                disabled={isLoadingMore || !pagination.nextPage}
+                disabled={isLoadingMore || isInitialLoading || !pagination.nextPage}
                 className={[
                   "inline-flex min-h-11 items-center justify-center rounded-2xl px-5 py-2.5 text-sm font-semibold transition",
-                  isLoadingMore || !pagination.nextPage
+                  isLoadingMore || isInitialLoading || !pagination.nextPage
                     ? "cursor-not-allowed bg-slate-200 text-slate-500"
                     : "bg-slate-900 text-white hover:bg-slate-800"
                 ].join(" ")}

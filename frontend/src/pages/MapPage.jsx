@@ -951,6 +951,24 @@ export default function MapPage() {
     const lat = Number(selectedPlace.lat);
     const lng = Number(selectedPlace.lng);
 
+    if (selectionSource === "search") {
+      setSelectedPost(null);
+      setSelectedPostDetails(null);
+      setSelectedPostDetailsError("");
+      setSelectedPostDetailsLoading(false);
+      setLightboxIndex(-1);
+
+      if (detailsAbortRef.current) {
+        detailsAbortRef.current.abort();
+        detailsAbortRef.current = null;
+      }
+
+      if (aiAbortRef.current) {
+        aiAbortRef.current.abort();
+        aiAbortRef.current = null;
+      }
+    }
+
     setMarker({ lat, lng });
     setLabel(selectedPlace.locationName || selectedPlace.displayName || "");
     setReverseStatus("");

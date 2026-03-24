@@ -4,25 +4,20 @@ import { Outlet, useLocation } from "react-router-dom";
 import NavBar from "./NavBar.jsx";
 import Sidebar from "./Sidebar.jsx";
 
-function isPostsWorkspace(pathname) {
-  return pathname === "/posts/new" || /^\/posts\/[^/]+(?:\/edit)?$/.test(pathname || "");
+function isEditorWorkspace(pathname) {
+  return pathname === "/posts/new" || /^\/posts\/[^/]+\/edit$/.test(pathname || "");
 }
 
 export default function AppLayout() {
   const location = useLocation();
-  const postsWorkspace = isPostsWorkspace(location.pathname);
+  const hideSidebar = isEditorWorkspace(location.pathname);
 
   return (
-    <div
-      className={[
-        "flex min-h-screen flex-col overflow-x-hidden",
-        postsWorkspace ? "bg-slate-100" : "bg-[oklch(45%_0.085_224.283)]"
-      ].join(" ")}
-    >
+    <div className="flex min-h-screen flex-col overflow-x-hidden bg-slate-100">
       <NavBar />
 
       <div className="flex min-h-0 flex-1">
-        {!postsWorkspace && <Sidebar />}
+        {!hideSidebar && <Sidebar />}
         <main className="relative z-0 min-w-0 flex-1">
           <Outlet />
         </main>

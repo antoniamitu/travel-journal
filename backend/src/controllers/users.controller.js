@@ -7,8 +7,12 @@ import { mapMapFeedRowToApi } from "../mappers/post.mapper.js";
 import { countDistinctNormalizedLocationValues } from "../utils/locationText.js";
 
 const PROFILE_RECENT_LIMIT = 10;
+const PUBLIC_PROFILE_DEFAULT_PAGE = 1;
+const PUBLIC_PROFILE_DEFAULT_LIMIT = 20;
+const PUBLIC_PROFILE_MAX_LIMIT = 50;
+const ALLOWED_SENTIMENTS = new Set(["positive", "neutral", "negative"]);
 
-const PROFILE_RECENT_POSTS_SELECT_SQL = Prisma.sql`
+const PROFILE_POSTS_SELECT_SQL = Prisma.sql`
   SELECT
     p.id,
     p.user_id,
@@ -141,6 +145,81 @@ function mapProfileStats(statsRow, sentimentRows, locationRows) {
   };
 }
 
+function normalizeRequestedUsername(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function parseBoundedPositiveIntegerOrThrow(rawValue, { defaultValue, minValue, maxValue }) {
+  if (rawValue == null || String(rawValue).trim() === "") {
+    return defaultValue;
+  }
+
+  const raw = String(rawValue).trim();
+  if (!/^-?\d+$/.test(raw)) {
+    throw new HttpError(400, "Invalid pagination parameters");
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new HttpError(400, "Invalid pagination parameters");
+  }
+
+  return Math.min(maxValue, Math.max(minValue, parsed));
+}
+
+function parsePublicProfileQuery(query) {
+  const page = parseBoundedPositiveIntegerOrThrow(query?.page, {
+    defaultValue: PUBLIC_PROFILE_DEFAULT_PAGE,
+    minValue: 1,
+    maxValue: Number.MAX_SAFE_INTEGER
+  });
+
+  const limit = parseBoundedPositiveIntegerOrThrow(query?.limit, {
+    defaultValue: PUBLIC_PROFILE_DEFAULT_LIMIT,
+    minValue: 1,
+    maxValue: PUBLIC_PROFILE_MAX_LIMIT
+  });
+
+  let sentiment;
+
+  if (query?.sentiment != null && String(query.sentiment).trim() !== "") {
+    const normalized = String(query.sentiment).trim().toLowerCase();
+
+    if (!ALLOWED_SENTIMENTS.has(normalized)) {
+      throw new HttpError(400, "Validation failed", {
+        sentiment: "sentiment must be one of: positive, neutral, negative"
+      });
+    }
+
+    sentiment = normalized;
+  }
+
+  const offset = (page - 1) * limit;
+  if (!Number.isSafeInteger(offset)) {
+    throw new HttpError(400, "Invalid pagination parameters");
+  }
+
+  return {
+    page,
+    limit,
+    offset,
+    sentiment
+  };
+}
+
+function buildPublicProfilePostsWhere(targetUserId, viewerUserId, sentiment) {
+  const where = {
+    user_id: targetUserId,
+    ...(targetUserId === viewerUserId ? {} : { privacy: "public" })
+  };
+
+  if (sentiment) {
+    where.sentiment = sentiment;
+  }
+
+  return where;
+}
+
 async function getAuthenticatedUserOrThrow(prisma, userId) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -197,7 +276,7 @@ export async function getProfile(req, res) {
     }),
     prisma.$queryRaw(
       Prisma.sql`
-        ${PROFILE_RECENT_POSTS_SELECT_SQL}
+        ${PROFILE_POSTS_SELECT_SQL}
         WHERE p.user_id = ${userId}
         ORDER BY p.created_at DESC, p.id DESC
         LIMIT ${PROFILE_RECENT_LIMIT}
@@ -217,6 +296,69 @@ export async function getProfile(req, res) {
     },
     stats,
     recentPosts
+  });
+}
+
+export async function getUserProfileByUsername(req, res) {
+  const prisma = getPrisma();
+  const viewerUserId = req.userId;
+  const requestedUsername = normalizeRequestedUsername(req.params?.username);
+
+  if (!requestedUsername) {
+    throw new HttpError(400, "Validation failed", {
+      username: "username is required"
+    });
+  }
+
+  const { page, limit, offset, sentiment } = parsePublicProfileQuery(req.query);
+
+  const targetUser = await prisma.user.findFirst({
+    where: {
+      username: {
+        equals: requestedUsername,
+        mode: "insensitive"
+      }
+    },
+    select: {
+      id: true,
+      username: true,
+      created_at: true
+    }
+  });
+
+  if (!targetUser) {
+    throw new HttpError(404, "Not found");
+  }
+
+  const where = buildPublicProfilePostsWhere(targetUser.id, viewerUserId, sentiment);
+  const visibilitySql =
+    targetUser.id === viewerUserId ? Prisma.empty : Prisma.sql` AND p.privacy = 'public'`;
+  const sentimentSql = sentiment ? Prisma.sql` AND p.sentiment = ${sentiment}` : Prisma.empty;
+
+  const [total, postRows] = await prisma.$transaction([
+    prisma.post.count({ where }),
+    prisma.$queryRaw(
+      Prisma.sql`
+        ${PROFILE_POSTS_SELECT_SQL}
+        WHERE p.user_id = ${targetUser.id}
+        ${visibilitySql}
+        ${sentimentSql}
+        ORDER BY p.created_at DESC, p.id DESC
+        LIMIT ${limit}
+        OFFSET ${offset}
+      `
+    )
+  ]);
+
+  const posts = (postRows || []).map((row) => mapProfileRecentRowToApi(row, viewerUserId));
+
+  return res.status(200).json({
+    user: {
+      username: targetUser.username,
+      createdAt: targetUser.created_at
+    },
+    posts,
+    total
   });
 }
 
