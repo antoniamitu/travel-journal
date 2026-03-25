@@ -12,6 +12,11 @@ const PUBLIC_PROFILE_DEFAULT_LIMIT = 20;
 const PUBLIC_PROFILE_MAX_LIMIT = 50;
 const ALLOWED_SENTIMENTS = new Set(["positive", "neutral", "negative"]);
 
+const ACCOUNT_SEARCH_MIN_QUERY_LENGTH = 3;
+const ACCOUNT_SEARCH_MAX_QUERY_LENGTH = 120;
+const ACCOUNT_SEARCH_DEFAULT_LIMIT = 5;
+const ACCOUNT_SEARCH_MAX_LIMIT = 10;
+
 const PROFILE_POSTS_SELECT_SQL = Prisma.sql`
   SELECT
     p.id,
@@ -149,6 +154,21 @@ function normalizeRequestedUsername(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeAccountSearchQueryValue(value) {
+  let q = typeof value === "string" ? value.trim() : "";
+  if (q.startsWith("@")) {
+    q = q.slice(1).trimStart();
+  }
+  return q;
+}
+
+function escapeLikePattern(value) {
+  return String(value || "")
+    .replaceAll("\\", "\\\\")
+    .replaceAll("%", "\\%")
+    .replaceAll("_", "\\_");
+}
+
 function parseBoundedPositiveIntegerOrThrow(rawValue, { defaultValue, minValue, maxValue }) {
   if (rawValue == null || String(rawValue).trim() === "") {
     return defaultValue;
@@ -205,6 +225,44 @@ function parsePublicProfileQuery(query) {
     offset,
     sentiment
   };
+}
+
+function parseAccountSearchQuery(query) {
+  const errors = {};
+  const q = normalizeAccountSearchQueryValue(query?.q);
+  let limit = ACCOUNT_SEARCH_DEFAULT_LIMIT;
+
+  if (!q) {
+    errors.q = "q is required";
+  } else if (q.length < ACCOUNT_SEARCH_MIN_QUERY_LENGTH) {
+    errors.q = `q must be at least ${ACCOUNT_SEARCH_MIN_QUERY_LENGTH} characters`;
+  } else if (q.length > ACCOUNT_SEARCH_MAX_QUERY_LENGTH) {
+    errors.q = `q must be at most ${ACCOUNT_SEARCH_MAX_QUERY_LENGTH} characters`;
+  }
+
+  if (query?.limit != null && String(query.limit).trim() !== "") {
+    const rawLimit = String(query.limit).trim();
+
+    if (!/^[1-9]\d*$/.test(rawLimit)) {
+      errors.limit = "limit must be a positive integer";
+    } else {
+      const parsedLimit = Number(rawLimit);
+
+      if (!Number.isSafeInteger(parsedLimit)) {
+        errors.limit = "limit is too large";
+      } else if (parsedLimit > ACCOUNT_SEARCH_MAX_LIMIT) {
+        errors.limit = `limit must be between 1 and ${ACCOUNT_SEARCH_MAX_LIMIT}`;
+      } else {
+        limit = parsedLimit;
+      }
+    }
+  }
+
+  if (Object.keys(errors).length > 0) {
+    throw new HttpError(400, "Validation failed", errors);
+  }
+
+  return { q, limit };
 }
 
 function buildPublicProfilePostsWhere(targetUserId, viewerUserId, sentiment) {
@@ -297,6 +355,34 @@ export async function getProfile(req, res) {
     stats,
     recentPosts
   });
+}
+
+export async function searchAccounts(req, res) {
+  const prisma = getPrisma();
+  const { q, limit } = parseAccountSearchQuery(req.query);
+  const escapedQ = escapeLikePattern(q);
+
+  const rows = await prisma.$queryRaw(
+    Prisma.sql`
+      SELECT
+        u.username
+      FROM users u
+      WHERE LOWER(u.username) LIKE LOWER(${escapedQ}) || '%' ESCAPE '\\'
+      ORDER BY LOWER(u.username) ASC, u.id ASC
+      LIMIT ${limit}
+    `
+  );
+
+  const accounts = (rows || []).map((row) => {
+    const username = String(row?.username || "").trim();
+
+    return {
+      username,
+      label: `@${username}`
+    };
+  });
+
+  return res.status(200).json({ accounts });
 }
 
 export async function getUserProfileByUsername(req, res) {

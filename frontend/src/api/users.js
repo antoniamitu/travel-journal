@@ -48,6 +48,23 @@ function normalizeRecentPosts(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function normalizeAccountSuggestions(value) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      const username = String(item?.username || "").trim();
+      const label = String(item?.label || (username ? `@${username}` : "")).trim();
+
+      if (!username || !label) {
+        return null;
+      }
+
+      return { username, label };
+    })
+    .filter(Boolean);
+}
+
 export async function getOwnProfile(options = {}) {
   const res = await api.get("/users/profile", options);
   const data = res?.data ?? {};
@@ -57,6 +74,21 @@ export async function getOwnProfile(options = {}) {
     stats: normalizeStats(data?.stats),
     recentPosts: normalizeRecentPosts(data?.recentPosts)
   };
+}
+
+export async function searchAccounts(query, params = {}, options = {}) {
+  const safeQuery = String(query || "").trim();
+
+  const res = await api.get("/users/search", {
+    ...options,
+    params: {
+      q: safeQuery,
+      ...(params || {}),
+      ...(options?.params || {})
+    }
+  });
+
+  return normalizeAccountSuggestions(res?.data?.accounts);
 }
 
 export async function getUserProfileByUsername(username, params = {}, options = {}) {

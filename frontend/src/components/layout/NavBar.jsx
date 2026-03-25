@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 
 import toast from "react-hot-toast";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../../api/axios.js";
+import { searchAccounts } from "../../api/users.js";
 import { useAuth } from "../../hooks/useAuth.js";
 import { useLocationContext } from "../../hooks/useLocationContext.js";
 
@@ -40,6 +41,14 @@ function normalizeLooseSearchKey(value) {
 
 function hasMinimumSearchChars(value) {
   return normalizeLooseSearchKey(value).length >= MIN_SUGGEST_CHARS;
+}
+
+function isAbortLikeError(err) {
+  return (
+    err?.name === "CanceledError" ||
+    err?.code === "ERR_CANCELED" ||
+    err?.name === "AbortError"
+  );
 }
 
 function getFeedSearchFromLocation(location) {
@@ -97,69 +106,120 @@ function SearchDropdown({
   isLoading,
   isSubmitPending,
   query,
-  suggestions,
+  placeSuggestions,
+  accountSuggestions,
   activeIndex,
   onHighlight,
-  onSelectSuggestion,
+  onSelectPlaceSuggestion,
+  onSelectAccountSuggestion,
   onSearchAll
 }) {
   if (!open) return null;
 
-  const searchAllIndex = suggestions.length;
-  const showEmptyState = !isLoading && suggestions.length === 0;
+  const placeCount = placeSuggestions.length;
+  const accountCount = accountSuggestions.length;
+  const totalSuggestionCount = placeCount + accountCount;
+  const searchAllIndex = totalSuggestionCount;
+  const showEmptyState = !isLoading && totalSuggestionCount === 0;
 
   return (
     <div className="absolute left-0 right-0 top-full z-[1200] mt-3 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.18)]">
-      <div id={listboxId} role="listbox" aria-label="Place suggestions">
-        {suggestions.length > 0 ? (
-          <div className="border-b border-slate-100 px-4 pt-3 pb-2">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700">
-              🖼️ Post places
+      <div id={listboxId} role="listbox" aria-label="Place and account suggestions">
+        {placeCount > 0 ? (
+          <>
+            <div className="border-b border-slate-100 px-4 pt-3 pb-2">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700">
+                🖼️ Post places
+              </div>
             </div>
-          </div>
+
+            <div className="py-1.5">
+              {placeSuggestions.map((item, index) => (
+                <button
+                  key={`${item.kind}-${item.queryValue}-${item.city || ""}-${item.country || ""}-${item.label}`}
+                  id={`${listboxId}-place-${index}`}
+                  type="button"
+                  role="option"
+                  aria-selected={activeIndex === index}
+                  onMouseEnter={() => onHighlight(index)}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => onSelectPlaceSuggestion(item)}
+                  className={[
+                    "flex w-full items-start gap-3 px-4 py-3 text-left transition",
+                    activeIndex === index ? "bg-slate-50" : "hover:bg-slate-50"
+                  ].join(" ")}
+                >
+                  <span className="mt-0.5 text-base" aria-hidden="true">
+                    📍
+                  </span>
+
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-slate-900">
+                      {item.label}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-slate-500">
+                      {item.kind === "place"
+                        ? "Specific place from public posts"
+                        : item.kind === "city"
+                          ? "City from public posts"
+                          : "Country from public posts"}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </>
         ) : null}
 
-        {suggestions.length > 0 ? (
-          <div className="py-1.5">
-            {suggestions.map((item, index) => (
-              <button
-                key={`${item.kind}-${item.queryValue}-${item.city || ""}-${item.country || ""}-${item.label}`}
-                id={`${listboxId}-option-${index}`}
-                type="button"
-                role="option"
-                aria-selected={activeIndex === index}
-                onMouseEnter={() => onHighlight(index)}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => onSelectSuggestion(item)}
-                className={[
-                  "flex w-full items-start gap-3 px-4 py-3 text-left transition",
-                  activeIndex === index ? "bg-slate-50" : "hover:bg-slate-50"
-                ].join(" ")}
-              >
-                <span className="mt-0.5 text-base" aria-hidden="true">
-                  📍
-                </span>
+        {accountCount > 0 ? (
+          <>
+            <div className="border-t border-slate-100 px-4 pt-3 pb-2">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-700">
+                👤 Accounts
+              </div>
+            </div>
 
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold text-slate-900">
-                    {item.label}
-                  </span>
-                  <span className="mt-0.5 block text-xs text-slate-500">
-                    {item.kind === "place"
-                      ? "Specific place from public posts"
-                      : item.kind === "city"
-                        ? "City from public posts"
-                        : "Country from public posts"}
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
+            <div className="py-1.5">
+              {accountSuggestions.map((item, index) => {
+                const optionIndex = placeCount + index;
+
+                return (
+                  <button
+                    key={`${item.username}-${item.label}`}
+                    id={`${listboxId}-account-${index}`}
+                    type="button"
+                    role="option"
+                    aria-selected={activeIndex === optionIndex}
+                    onMouseEnter={() => onHighlight(optionIndex)}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => onSelectAccountSuggestion(item)}
+                    className={[
+                      "flex w-full items-start gap-3 px-4 py-3 text-left transition",
+                      activeIndex === optionIndex ? "bg-slate-50" : "hover:bg-slate-50"
+                    ].join(" ")}
+                  >
+                    <span className="mt-0.5 text-base" aria-hidden="true">
+                      👤
+                    </span>
+
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-slate-900">
+                        {item.label}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-slate-500">
+                        Open this traveler&apos;s profile
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
         ) : null}
 
         {showEmptyState ? (
           <div className="px-4 py-4 text-sm text-slate-500">
-            <div className="font-medium text-slate-700">No matching post places.</div>
+            <div className="font-medium text-slate-700">No matching places or accounts.</div>
             <div className="mt-1">Press Enter and we’ll try the map if no post matches are found.</div>
           </div>
         ) : null}
@@ -173,8 +233,7 @@ function SearchDropdown({
           onMouseDown={(e) => e.preventDefault()}
           onClick={onSearchAll}
           className={[
-            "flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition",
-            suggestions.length > 0 ? "border-t border-slate-100" : "border-t border-slate-100",
+            "flex w-full items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-left transition",
             activeIndex === searchAllIndex ? "bg-slate-50" : "hover:bg-slate-50"
           ].join(" ")}
         >
@@ -207,6 +266,7 @@ export default function NavBar() {
 
   const [globalSearch, setGlobalSearch] = useState("");
   const [placeSuggestions, setPlaceSuggestions] = useState([]);
+  const [accountSuggestions, setAccountSuggestions] = useState([]);
   const [isSuggestLoading, setIsSuggestLoading] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchActiveIndex, setSearchActiveIndex] = useState(-1);
@@ -237,7 +297,30 @@ export default function NavBar() {
     () => hasMinimumSearchChars(trimmedGlobalSearch),
     [trimmedGlobalSearch]
   );
-  const searchOptionCount = placeSuggestions.length + 1;
+
+  const totalSuggestionCount = placeSuggestions.length + accountSuggestions.length;
+  const searchOptionCount = totalSuggestionCount + 1;
+
+  const activeDescendantId = useMemo(() => {
+    if (!isSearchOpen || searchActiveIndex < 0) return undefined;
+
+    if (searchActiveIndex < placeSuggestions.length) {
+      return `${searchListboxId}-place-${searchActiveIndex}`;
+    }
+
+    const accountIndex = searchActiveIndex - placeSuggestions.length;
+    if (accountIndex >= 0 && accountIndex < accountSuggestions.length) {
+      return `${searchListboxId}-account-${accountIndex}`;
+    }
+
+    return `${searchListboxId}-option-search-all`;
+  }, [
+    accountSuggestions.length,
+    isSearchOpen,
+    placeSuggestions.length,
+    searchActiveIndex,
+    searchListboxId
+  ]);
 
   const closeMenu = useCallback(({ restoreFocus = true } = {}) => {
     setOpen(false);
@@ -254,6 +337,12 @@ export default function NavBar() {
     setSearchActiveIndex(-1);
   }, []);
 
+  const resetSuggestionState = useCallback(() => {
+    setPlaceSuggestions([]);
+    setAccountSuggestions([]);
+    setSearchActiveIndex(-1);
+  }, []);
+
   const navigateToFeedResults = useCallback(
     (query) => {
       clearSelectedPlace();
@@ -262,6 +351,29 @@ export default function NavBar() {
     },
     [clearSelectedPlace, closeSearchDropdown, location, navigate]
   );
+
+  const handleClearSearchInput = useCallback(() => {
+    if (suggestAbortRef.current) {
+      suggestAbortRef.current.abort();
+      suggestAbortRef.current = null;
+    }
+
+    if (submitAbortRef.current) {
+      submitAbortRef.current.abort();
+      submitAbortRef.current = null;
+    }
+
+    setGlobalSearch("");
+    resetSuggestionState();
+    closeSearchDropdown();
+
+    if (location.pathname === "/feed" && getFeedSearchFromLocation(location)) {
+      navigate(buildFeedSearchUrl("", location));
+      return;
+    }
+
+    requestAnimationFrame(() => searchInputRef.current?.focus());
+  }, [closeSearchDropdown, location, navigate, resetSuggestionState]);
 
   const handleSubmitSearch = useCallback(
     async (queryOverride) => {
@@ -307,11 +419,7 @@ export default function NavBar() {
           const posts = Array.isArray(feedRes?.data?.posts) ? feedRes.data.posts : [];
           hasFeedResults = posts.length > 0;
         } catch (err) {
-          if (
-            err?.name === "CanceledError" ||
-            err?.code === "ERR_CANCELED" ||
-            err?.name === "AbortError"
-          ) {
+          if (isAbortLikeError(err)) {
             return;
           }
 
@@ -334,11 +442,7 @@ export default function NavBar() {
             }
           );
         } catch (err) {
-          if (
-            err?.name === "CanceledError" ||
-            err?.code === "ERR_CANCELED" ||
-            err?.name === "AbortError"
-          ) {
+          if (isAbortLikeError(err)) {
             return;
           }
 
@@ -377,19 +481,43 @@ export default function NavBar() {
     [handleSubmitSearch]
   );
 
+  const handleSelectAccountSuggestion = useCallback(
+    (item) => {
+      const username = String(item?.username || "").trim();
+      if (!username) return;
+
+      if (suggestAbortRef.current) {
+        suggestAbortRef.current.abort();
+        suggestAbortRef.current = null;
+      }
+
+      if (submitAbortRef.current) {
+        submitAbortRef.current.abort();
+        submitAbortRef.current = null;
+      }
+
+      clearSelectedPlace();
+      setGlobalSearch("");
+      resetSuggestionState();
+      closeSearchDropdown();
+      navigate(`/users/${encodeURIComponent(username)}`);
+    },
+    [clearSelectedPlace, closeSearchDropdown, navigate, resetSuggestionState]
+  );
+
   useEffect(() => {
     if (location.pathname === "/feed") {
       setGlobalSearch(getFeedSearchFromLocation(location));
       closeSearchDropdown();
-      setPlaceSuggestions([]);
+      resetSuggestionState();
       return;
     }
 
     if (location.pathname !== "/feed" && location.pathname !== "/map") {
-      setPlaceSuggestions([]);
+      resetSuggestionState();
       closeSearchDropdown();
     }
-  }, [location, closeSearchDropdown]);
+  }, [location, closeSearchDropdown, resetSuggestionState]);
 
   useEffect(() => {
     if (!open && !isSearchOpen) return;
@@ -451,10 +579,9 @@ export default function NavBar() {
     const query = trimmedGlobalSearch;
 
     if (!canOpenSearchDropdown) {
-      setPlaceSuggestions([]);
+      resetSuggestionState();
       setIsSuggestLoading(false);
       setIsSearchOpen(false);
-      setSearchActiveIndex(-1);
       return;
     }
 
@@ -465,44 +592,70 @@ export default function NavBar() {
       const reqId = (suggestReqIdRef.current += 1);
       setIsSuggestLoading(true);
 
-      try {
-        const res = await api.get("/posts/locations/suggest", {
+      const [placesResult, accountsResult] = await Promise.allSettled([
+        api.get("/posts/locations/suggest", {
           params: {
             q: query,
             limit: MAX_SUGGESTIONS
           },
           signal: controller.signal,
           timeout: 10000
-        });
+        }),
+        searchAccounts(
+          query,
+          { limit: MAX_SUGGESTIONS },
+          {
+            signal: controller.signal,
+            timeout: 10000
+          }
+        )
+      ]);
 
-        if (reqId !== suggestReqIdRef.current) return;
+      if (reqId !== suggestReqIdRef.current) {
+        return;
+      }
 
-        const suggestions = Array.isArray(res?.data?.suggestions) ? res.data.suggestions : [];
-        setPlaceSuggestions(suggestions);
-        setIsSearchOpen(true);
-        setSearchActiveIndex(-1);
-      } catch (err) {
-        if (
-          err?.name === "CanceledError" ||
-          err?.code === "ERR_CANCELED" ||
-          err?.name === "AbortError"
-        ) {
-          return;
-        }
+      const placesAborted =
+        placesResult.status === "rejected" && isAbortLikeError(placesResult.reason);
+      const accountsAborted =
+        accountsResult.status === "rejected" && isAbortLikeError(accountsResult.reason);
 
-        if (reqId !== suggestReqIdRef.current) return;
+      if (placesAborted && accountsAborted) {
+        return;
+      }
 
-        setPlaceSuggestions([]);
-        setIsSearchOpen(true);
-        setSearchActiveIndex(-1);
-      } finally {
-        if (reqId === suggestReqIdRef.current) {
-          setIsSuggestLoading(false);
-        }
+      const nextPlaceSuggestions =
+        placesResult.status === "fulfilled"
+          ? Array.isArray(placesResult.value?.data?.suggestions)
+            ? placesResult.value.data.suggestions
+            : []
+          : [];
+
+      const nextAccountSuggestions =
+        accountsResult.status === "fulfilled" ? accountsResult.value : [];
+
+      const hadAnySuccess =
+        placesResult.status === "fulfilled" || accountsResult.status === "fulfilled";
+
+      if (!hadAnySuccess) {
+        resetSuggestionState();
+        setIsSearchOpen(false);
+        setIsSuggestLoading(false);
 
         if (suggestAbortRef.current === controller) {
           suggestAbortRef.current = null;
         }
+        return;
+      }
+
+      setPlaceSuggestions(nextPlaceSuggestions);
+      setAccountSuggestions(nextAccountSuggestions);
+      setIsSearchOpen(true);
+      setSearchActiveIndex(-1);
+      setIsSuggestLoading(false);
+
+      if (suggestAbortRef.current === controller) {
+        suggestAbortRef.current = null;
       }
     }, SEARCH_DEBOUNCE_MS);
 
@@ -514,7 +667,7 @@ export default function NavBar() {
         suggestAbortRef.current = null;
       }
     };
-  }, [trimmedGlobalSearch, canOpenSearchDropdown]);
+  }, [trimmedGlobalSearch, canOpenSearchDropdown, resetSuggestionState]);
 
   useEffect(() => {
     return () => {
@@ -603,17 +756,27 @@ export default function NavBar() {
       if (e.key === "Enter") {
         e.preventDefault();
 
-        if (isSearchOpen && searchActiveIndex >= 0 && searchActiveIndex < placeSuggestions.length) {
-          await handleSelectPlaceSuggestion(placeSuggestions[searchActiveIndex]);
-          return;
+        if (isSearchOpen && searchActiveIndex >= 0) {
+          if (searchActiveIndex < placeSuggestions.length) {
+            await handleSelectPlaceSuggestion(placeSuggestions[searchActiveIndex]);
+            return;
+          }
+
+          const accountIndex = searchActiveIndex - placeSuggestions.length;
+          if (accountIndex >= 0 && accountIndex < accountSuggestions.length) {
+            handleSelectAccountSuggestion(accountSuggestions[accountIndex]);
+            return;
+          }
         }
 
         await handleSubmitSearch(trimmedGlobalSearch);
       }
     },
     [
+      accountSuggestions,
       canOpenSearchDropdown,
       closeSearchDropdown,
+      handleSelectAccountSuggestion,
       handleSelectPlaceSuggestion,
       handleSubmitSearch,
       isSearchOpen,
@@ -716,19 +879,24 @@ export default function NavBar() {
                   }
                 }}
                 onKeyDown={onSearchInputKeyDown}
-                placeholder="Search a place..."
-                aria-label="Search places"
+                placeholder="Search a place (e.g. Rome) or an account…"
+                aria-label="Search places or accounts"
                 aria-expanded={isSearchOpen && canOpenSearchDropdown}
                 aria-controls={searchListboxId}
-                aria-activedescendant={
-                  isSearchOpen && searchActiveIndex >= 0
-                    ? searchActiveIndex < placeSuggestions.length
-                      ? `${searchListboxId}-option-${searchActiveIndex}`
-                      : `${searchListboxId}-option-search-all`
-                    : undefined
-                }
-                className="w-full rounded-[24px] border border-white/25 bg-white/88 px-14 py-4 text-lg text-slate-900 shadow-sm outline-none backdrop-blur transition placeholder:text-slate-500 focus:border-white/70 focus:bg-white focus:ring-4 focus:ring-white/20"
+                aria-activedescendant={activeDescendantId}
+                className="w-full rounded-[24px] border border-white/25 bg-white/88 px-14 py-4 pr-16 text-lg text-slate-900 shadow-sm outline-none backdrop-blur transition placeholder:text-slate-500 focus:border-white/70 focus:bg-white focus:ring-4 focus:ring-white/20"
               />
+
+              {trimmedGlobalSearch ? (
+                <button
+                  type="button"
+                  onClick={handleClearSearchInput}
+                  aria-label="Clear search"
+                  className="absolute right-4 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                >
+                  ✕
+                </button>
+              ) : null}
             </div>
           </form>
 
@@ -738,10 +906,12 @@ export default function NavBar() {
             isLoading={isSuggestLoading}
             isSubmitPending={isSearchSubmitPending}
             query={trimmedGlobalSearch}
-            suggestions={placeSuggestions}
+            placeSuggestions={placeSuggestions}
+            accountSuggestions={accountSuggestions}
             activeIndex={searchActiveIndex}
             onHighlight={setSearchActiveIndex}
-            onSelectSuggestion={handleSelectPlaceSuggestion}
+            onSelectPlaceSuggestion={handleSelectPlaceSuggestion}
+            onSelectAccountSuggestion={handleSelectAccountSuggestion}
             onSearchAll={() => handleSubmitSearch(trimmedGlobalSearch)}
           />
         </div>
