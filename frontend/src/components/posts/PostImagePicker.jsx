@@ -26,7 +26,7 @@ function StatusOverlay({ item, onRetry, disabled }) {
             if (disabled) return;
             onRetry?.(item.localId);
           }}
-          className="mt-2 rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-2 inline-flex min-h-9 items-center rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           Retry
         </button>
@@ -55,13 +55,26 @@ export default function PostImagePicker({
   disabled = false,
   disabledReason = ""
 }) {
-  const inputRef = useRef(null);
+  const galleryInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
+
   const count = Array.isArray(items) ? items.length : 0;
   const canAddMore = count < maxCount;
 
-  function openPicker() {
+  function openGalleryPicker() {
     if (disabled || !canAddMore) return;
-    inputRef.current?.click();
+    galleryInputRef.current?.click();
+  }
+
+  function openCameraPicker() {
+    if (disabled || !canAddMore) return;
+    cameraInputRef.current?.click();
+  }
+
+  function handleFilesChange(fileList) {
+    const files = Array.from(fileList || []);
+    if (disabled || files.length === 0) return;
+    onFilesSelected?.(files);
   }
 
   return (
@@ -69,7 +82,7 @@ export default function PostImagePicker({
       <div className="flex items-end justify-between gap-3">
         <div>
           <label className="text-sm font-semibold text-slate-900">Photos</label>
-          <div className="mt-1 text-xs text-slate-500">
+          <div className="mt-1 text-xs leading-5 text-slate-500">
             Add up to {maxCount} photos. Max 5MB each. JPEG, PNG, WebP, HEIC/HEIF when supported.
           </div>
         </div>
@@ -80,20 +93,60 @@ export default function PostImagePicker({
       </div>
 
       <input
-        ref={inputRef}
+        ref={galleryInputRef}
         type="file"
         hidden
         multiple
         accept={ACCEPT_ATTR}
+        disabled={disabled}
+        onChange={(e) => {
+          handleFilesChange(e.target.files);
+          e.target.value = "";
+        }}
+      />
+
+      <input
+        ref={cameraInputRef}
+        type="file"
+        hidden
+        accept={ACCEPT_ATTR}
         capture="environment"
         disabled={disabled}
         onChange={(e) => {
-          const files = Array.from(e.target.files || []);
+          handleFilesChange(e.target.files);
           e.target.value = "";
-          if (disabled) return;
-          onFilesSelected?.(files);
         }}
       />
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <button
+          type="button"
+          disabled={disabled || !canAddMore}
+          onClick={openGalleryPicker}
+          className={[
+            "inline-flex min-h-11 items-center justify-center rounded-2xl border px-4 py-3 text-sm font-semibold transition",
+            disabled || !canAddMore
+              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+              : "border-slate-200 bg-white text-slate-700 hover:border-emerald-400 hover:text-emerald-700"
+          ].join(" ")}
+        >
+          🖼️ Add from gallery
+        </button>
+
+        <button
+          type="button"
+          disabled={disabled || !canAddMore}
+          onClick={openCameraPicker}
+          className={[
+            "inline-flex min-h-11 items-center justify-center rounded-2xl border px-4 py-3 text-sm font-semibold transition",
+            disabled || !canAddMore
+              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+              : "border-slate-200 bg-white text-slate-700 hover:border-cyan-400 hover:text-cyan-700"
+          ].join(" ")}
+        >
+          📷 Use camera
+        </button>
+      </div>
 
       <div className="mt-4 flex flex-wrap gap-3">
         {items.map((item, index) => {
@@ -106,7 +159,13 @@ export default function PostImagePicker({
               className="group relative h-[118px] w-[118px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-sm"
             >
               {src ? (
-                <img src={src} alt={label} className="h-full w-full object-cover" />
+                <img
+                  src={src}
+                  alt={label}
+                  loading="lazy"
+                  decoding="async"
+                  className="h-full w-full object-cover"
+                />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-xs text-slate-500">
                   No preview
@@ -120,7 +179,7 @@ export default function PostImagePicker({
                   if (disabled) return;
                   onRequestRemove?.(item.localId);
                 }}
-                className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-sm font-bold text-slate-700 shadow transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-sm font-bold text-slate-700 shadow transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
                 aria-label={`Remove ${label}`}
               >
                 ×
@@ -135,7 +194,7 @@ export default function PostImagePicker({
           <button
             type="button"
             disabled={disabled}
-            onClick={openPicker}
+            onClick={openGalleryPicker}
             className={[
               "flex h-[118px] w-[118px] shrink-0 flex-col items-center justify-center rounded-2xl border border-dashed bg-white transition",
               disabled
@@ -144,7 +203,7 @@ export default function PostImagePicker({
             ].join(" ")}
           >
             <span className="text-xl">⇪</span>
-            <span className="mt-2 text-xs font-medium">Add photos</span>
+            <span className="mt-2 text-xs font-medium">Add more</span>
           </button>
         )}
       </div>

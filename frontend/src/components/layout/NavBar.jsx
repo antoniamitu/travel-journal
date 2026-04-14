@@ -123,7 +123,7 @@ function SearchDropdown({
   const showEmptyState = !isLoading && totalSuggestionCount === 0;
 
   return (
-    <div className="absolute left-0 right-0 top-full z-[1200] mt-3 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.18)]">
+    <div className="absolute left-0 right-0 top-full z-[1200] mt-2 overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.18)] md:mt-3 md:rounded-[24px]">
       <div id={listboxId} role="listbox" aria-label="Place and account suggestions">
         {placeCount > 0 ? (
           <>
@@ -326,10 +326,17 @@ export default function NavBar() {
     setOpen(false);
     setActiveIndex(-1);
     setHoverIndex(-1);
-    if (restoreFocus) requestAnimationFrame(() => buttonRef.current?.focus());
+
+    if (restoreFocus) {
+      requestAnimationFrame(() => {
+        buttonRef.current?.focus();
+      });
+    }
   }, []);
 
-  const openMenu = useCallback(() => setOpen(true), []);
+  const openMenu = useCallback(() => {
+    setOpen(true);
+  }, []);
 
   const closeSearchDropdown = useCallback(() => {
     setIsSearchOpen(false);
@@ -696,8 +703,12 @@ export default function NavBar() {
     (e) => {
       if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        if (!open) openMenu();
-        else requestAnimationFrame(() => itemsRef.current?.[0]?.focus());
+
+        if (!open) {
+          openMenu();
+        } else {
+          requestAnimationFrame(() => itemsRef.current?.[0]?.focus());
+        }
       }
     },
     [open, openMenu]
@@ -795,7 +806,9 @@ export default function NavBar() {
   const handleLogout = useCallback(async () => {
     try {
       const maybePromise = logout?.();
-      if (maybePromise && typeof maybePromise.then === "function") await maybePromise;
+      if (maybePromise && typeof maybePromise.then === "function") {
+        await maybePromise;
+      }
       toast.success("Logged out.");
     } finally {
       closeMenu({ restoreFocus: false });
@@ -842,20 +855,22 @@ export default function NavBar() {
 
   return (
     <nav className="sticky top-0 z-[1100] border-b border-transparent bg-gradient-to-r from-cyan-600 via-teal-600 to-cyan-500">
-      <div className="mx-auto flex h-[88px] max-w-[1400px] items-center gap-4 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-[72px] w-full max-w-[1400px] items-center gap-2 px-3 sm:h-[80px] sm:gap-3 sm:px-6 lg:h-[88px] lg:gap-4 lg:px-8">
         <Link
           to="/feed"
-          className="flex shrink-0 items-center gap-3 text-white transition hover:text-cyan-100"
+          className="flex min-w-0 shrink-0 items-center gap-2 text-white transition hover:text-cyan-100 sm:gap-3"
         >
-          <span className="inline-flex h-14 w-14 items-center justify-center rounded-[20px] border border-white/30 bg-white/12 text-white shadow-sm backdrop-blur">
-            <span className="text-[26px]" aria-hidden="true">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-[18px] border border-white/30 bg-white/12 text-white shadow-sm backdrop-blur md:h-12 md:w-12 lg:h-14 lg:w-14 lg:rounded-[20px]">
+            <span className="text-[22px] lg:text-[26px]" aria-hidden="true">
               🌐
             </span>
           </span>
-          <span className="text-[22px] font-extrabold tracking-tight">GeoTravel Journal</span>
+          <span className="hidden truncate text-lg font-extrabold tracking-tight min-[420px]:inline lg:text-[22px]">
+            GeoTravel Journal
+          </span>
         </Link>
 
-        <div ref={searchWrapRef} className="relative mx-auto min-w-0 max-w-3xl flex-1">
+        <div ref={searchWrapRef} className="relative min-w-0 flex-1">
           <form
             className="w-full"
             onSubmit={async (e) => {
@@ -864,7 +879,7 @@ export default function NavBar() {
             }}
           >
             <div className="relative">
-              <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-slate-400">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 sm:left-4 lg:left-5">
                 🔎
               </span>
 
@@ -879,12 +894,12 @@ export default function NavBar() {
                   }
                 }}
                 onKeyDown={onSearchInputKeyDown}
-                placeholder="Search a place (e.g. Rome) or an account…"
+                placeholder="Search a place or account…"
                 aria-label="Search places or accounts"
                 aria-expanded={isSearchOpen && canOpenSearchDropdown}
                 aria-controls={searchListboxId}
                 aria-activedescendant={activeDescendantId}
-                className="w-full rounded-[24px] border border-white/25 bg-white/88 px-14 py-4 pr-16 text-lg text-slate-900 shadow-sm outline-none backdrop-blur transition placeholder:text-slate-500 focus:border-white/70 focus:bg-white focus:ring-4 focus:ring-white/20"
+                className="w-full rounded-[18px] border border-white/25 bg-white/88 px-10 py-2.5 pr-11 text-sm text-slate-900 shadow-sm outline-none backdrop-blur transition placeholder:text-slate-500 focus:border-white/70 focus:bg-white focus:ring-4 focus:ring-white/20 sm:rounded-[20px] sm:px-11 sm:py-3 sm:pr-12 sm:text-base lg:rounded-[24px] lg:px-14 lg:py-4 lg:pr-16 lg:text-lg"
               />
 
               {trimmedGlobalSearch ? (
@@ -892,7 +907,7 @@ export default function NavBar() {
                   type="button"
                   onClick={handleClearSearchInput}
                   aria-label="Clear search"
-                  className="absolute right-4 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                  className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 sm:right-3 sm:h-9 sm:w-9 lg:right-4"
                 >
                   ✕
                 </button>
@@ -918,9 +933,11 @@ export default function NavBar() {
 
         <Link
           to="/posts/new"
-          className="shrink-0 rounded-[20px] border border-white/30 bg-white/10 px-6 py-3 text-sm font-semibold text-white shadow-sm backdrop-blur transition hover:bg-white/18"
+          className="inline-flex min-h-11 shrink-0 items-center rounded-[18px] border border-white/30 bg-white/10 px-3 py-2.5 text-sm font-semibold text-white shadow-sm backdrop-blur transition hover:bg-white/18 sm:px-4 lg:rounded-[20px] lg:px-5 lg:py-3"
+          aria-label="Create a new post"
         >
-          +&nbsp; New Post
+          <span aria-hidden="true">＋</span>
+          <span className="ml-1 hidden min-[420px]:inline">New Post</span>
         </Link>
 
         <div
@@ -937,13 +954,15 @@ export default function NavBar() {
             aria-haspopup="menu"
             aria-expanded={open}
             aria-controls={menuId}
-            className="flex items-center gap-3 rounded-[22px] border border-white/30 bg-white/10 px-4 py-2.5 text-sm font-medium text-white shadow-sm backdrop-blur transition hover:bg-white/18"
+            className="flex min-h-11 items-center gap-2 rounded-[18px] border border-white/30 bg-white/10 px-3 py-2 text-sm font-medium text-white shadow-sm backdrop-blur transition hover:bg-white/18 md:rounded-[22px] md:px-4 md:py-2.5"
           >
-            <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/30 bg-white/20 text-xs font-bold text-white">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/30 bg-white/20 text-xs font-bold text-white md:h-11 md:w-11">
               {avatarInitials}
             </span>
-            <span className="max-w-[160px] truncate text-lg font-semibold">{displayName}</span>
-            <span className="text-xs opacity-80">{open ? "▲" : "▼"}</span>
+            <span className="hidden max-w-[160px] truncate text-base font-semibold sm:block md:text-lg">
+              {displayName}
+            </span>
+            <span className="hidden text-xs opacity-80 md:block">{open ? "▲" : "▼"}</span>
           </button>
 
           {open && (
@@ -952,7 +971,7 @@ export default function NavBar() {
               role="menu"
               aria-label="Account menu"
               onKeyDown={onMenuKeyDown}
-              className="absolute right-0 top-full z-[1101] mt-3 min-w-[240px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg"
+              className="absolute right-0 top-full z-[1101] mt-3 min-w-[220px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg md:min-w-[240px]"
             >
               <div className="border-b border-slate-100 px-4 py-3 text-xs text-slate-500">
                 Signed in as

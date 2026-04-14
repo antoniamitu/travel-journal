@@ -284,9 +284,9 @@ function EditorShellCard({ title, children }) {
 
 function EditorLoadingSkeleton() {
   return (
-    <div className="mx-auto max-w-[1600px] p-4 md:p-6 xl:p-8">
-      <div className="grid animate-pulse gap-6 xl:grid-cols-[560px_minmax(0,1fr)]">
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="mx-auto max-w-[1600px] px-4 pb-28 pt-4 md:px-6 md:pb-6 md:pt-6 xl:px-8 xl:pt-8">
+      <div className="grid animate-pulse gap-6 lg:grid-cols-[560px_minmax(0,1fr)]">
+        <section className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           <div className="h-4 w-36 rounded-full bg-slate-200" />
           <div className="mt-3 h-8 w-60 rounded-2xl bg-slate-200" />
           <div className="mt-2 h-4 w-80 rounded-xl bg-slate-100" />
@@ -311,7 +311,7 @@ function EditorLoadingSkeleton() {
             <div className="mt-2 h-4 w-56 rounded-xl bg-slate-100" />
           </div>
           <div className="overflow-hidden rounded-[24px] border border-slate-200">
-            <div className="h-[420px] bg-slate-100 md:h-[520px] xl:h-[720px]" />
+            <div className="h-[360px] bg-slate-100 sm:h-[420px] md:h-[520px] lg:h-[680px]" />
           </div>
         </section>
       </div>
@@ -517,7 +517,7 @@ function LocationAutocomplete({
           aria-controls={showDropdown ? listboxId : undefined}
           aria-activedescendant={activeOptionId}
           aria-busy={isLoading || undefined}
-          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-11 py-3 pr-11 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-11 py-3 pr-11 text-base text-slate-900 placeholder:text-slate-400 sm:text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-slate-100"
         />
 
         {value.trim().length > 0 && !disabled && (
@@ -1366,9 +1366,9 @@ export default function PostEditorPage() {
 
   return (
     <>
-      <div className="mx-auto max-w-[1600px] p-4 md:p-6 xl:p-8">
-        <form onSubmit={handleSubmit} className="grid gap-6 xl:grid-cols-[560px_minmax(0,1fr)]">
-          <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mx-auto max-w-[1600px] px-4 pb-28 pt-4 md:px-6 md:pb-6 md:pt-6 xl:px-8 xl:pt-8">
+        <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-[560px_minmax(0,1fr)]">
+          <section className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
             <div>
               <div className="text-[13px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                 {isEdit ? "Edit Journey Entry" : "New Journey Entry"}
@@ -1514,7 +1514,7 @@ export default function PostEditorPage() {
                       }}
                       placeholder="Ancient Wonders of Rome"
                       className={[
-                        "w-full rounded-2xl border bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400",
+                        "w-full rounded-2xl border bg-slate-50 px-4 py-3 text-base text-slate-900 sm:text-sm outline-none transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400",
                         titleMessage.tone === "error"
                           ? "border-rose-300 ring-2 ring-rose-100"
                           : "border-slate-200 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
@@ -1543,7 +1543,7 @@ export default function PostEditorPage() {
                       }}
                       placeholder="Write your memory here..."
                       className={[
-                        "w-full resize-none rounded-2xl border bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400",
+                        "w-full resize-none rounded-2xl border bg-slate-50 px-4 py-3 text-base leading-6 text-slate-900 sm:text-sm outline-none transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400",
                         contentMessage.tone === "error"
                           ? "border-rose-300 ring-2 ring-rose-100"
                           : "border-slate-200 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
@@ -1580,7 +1580,7 @@ export default function PostEditorPage() {
                         onChange={(e) => {
                           setForm((prev) => ({ ...prev, privacy: e.target.value }));
                         }}
-                        className="w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-11 text-sm font-medium text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                        className="w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-11 text-base font-medium text-slate-900 sm:text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                       >
                         <option value="private">🔒 Private (only me)</option>
                         <option value="public">🌍 Public (all users)</option>
@@ -1670,7 +1670,7 @@ export default function PostEditorPage() {
                 </div>
               </div>
 
-              <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="hidden gap-3 pt-2 md:flex md:flex-row md:items-center md:justify-between">
                 <button
                   type="button"
                   onClick={() => {
@@ -1708,12 +1708,58 @@ export default function PostEditorPage() {
                       : "Create Post"}
                 </button>
               </div>
+
+              <div className="md:hidden">
+                <div
+                  className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-12px_30px_rgba(15,23,42,0.12)] backdrop-blur"
+                  style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+                >
+                  <div className="mx-auto flex max-w-[1600px] gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!isDirty) {
+                          if (isEdit) navigate(`/posts/${id}`);
+                          else {
+                            clearSelectedPlace();
+                            navigate("/map");
+                          }
+                          return;
+                        }
+
+                        setDialogState({
+                          type: "discard",
+                          imageLocalId: null,
+                          busy: false
+                        });
+                      }}
+                      className="inline-flex min-h-11 flex-1 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+
+                    <button
+                      type="submit"
+                      disabled={!canSubmit}
+                      className="inline-flex min-h-11 flex-1 items-center justify-center rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {isSubmitting
+                        ? isEdit
+                          ? "Saving..."
+                          : "Creating..."
+                        : isEdit
+                          ? "Save Changes"
+                          : "Create Post"}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
 
           <section
             id="editor-map-preview"
-            className="overflow-hidden rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm"
+            className="overflow-hidden rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm lg:sticky lg:top-[104px]"
           >
             <div className="px-2 pb-3 pt-1">
               <h2 className="text-xl font-semibold text-slate-900">Map Preview</h2>
@@ -1721,7 +1767,7 @@ export default function PostEditorPage() {
             </div>
 
             <div className="overflow-hidden rounded-[24px] border border-slate-200">
-              <div className="h-[420px] md:h-[520px] xl:h-[720px]">
+              <div className="h-[360px] sm:h-[420px] md:h-[520px] lg:h-[680px]">
                 <MapContainer center={mapCenter} zoom={mapZoom} scrollWheelZoom className="h-full w-full">
                   <MapSyncView center={mapCenter} zoom={mapZoom} />
                   <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />

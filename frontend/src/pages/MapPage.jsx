@@ -35,6 +35,8 @@ const TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
+const CLOUDINARY_UPLOAD_SEGMENT = "/upload/";
+const LIGHTBOX_SWIPE_THRESHOLD_PX = 56;
 const MAP_FETCH_DEBOUNCE_MS = 500;
 const WORLD_LNG_EPSILON = 1e-6;
 const INITIAL_CENTER = [45.9432, 24.9668];
@@ -175,19 +177,78 @@ function formatDate(value) {
   }).format(date);
 }
 
+function isCloudinaryUrl(url) {
+  return typeof url === "string" && url.includes(CLOUDINARY_UPLOAD_SEGMENT);
+}
+
+function injectCloudinaryTransform(url, transform) {
+  if (!isCloudinaryUrl(url)) return url || "";
+  return url.replace(CLOUDINARY_UPLOAD_SEGMENT, `${CLOUDINARY_UPLOAD_SEGMENT}${transform}/`);
+}
+
 function optimizeCloudinaryUrl(secureUrl, variant = "panel") {
-  if (typeof secureUrl !== "string" || !secureUrl.includes("/upload/")) {
+  if (!isCloudinaryUrl(secureUrl)) {
     return secureUrl || "";
   }
 
   const transform =
     variant === "thumb"
-      ? "c_fill,w_640,h_420,g_auto,f_auto,q_auto"
+      ? "c_fill,g_auto,w_640,h_420,f_auto,q_auto"
       : variant === "full"
-        ? "c_limit,w_1800,f_auto,q_auto"
-        : "c_fill,w_1200,h_760,g_auto,f_auto,q_auto";
+        ? "c_limit,w_2000,f_auto,q_auto"
+        : variant === "preview"
+          ? "c_limit,w_1440,f_auto,q_auto"
+          : "c_fill,g_auto,w_1200,h_760,f_auto,q_auto";
 
-  return secureUrl.replace("/upload/", `/upload/${transform}/`);
+  return injectCloudinaryTransform(secureUrl, transform);
+}
+
+function buildCloudinarySrcSet(secureUrl, options) {
+  if (!isCloudinaryUrl(secureUrl)) return undefined;
+
+  const {
+    widths = [],
+    crop = "limit",
+    gravity = "auto",
+    height,
+    quality = "auto",
+    format = "auto"
+  } = options || {};
+
+  const normalizedWidths = Array.from(
+    new Set(widths.filter((value) => Number.isFinite(value) && value > 0))
+  ).sort((a, b) => a - b);
+
+  if (!normalizedWidths.length) return undefined;
+
+  return normalizedWidths
+    .map((width) => {
+      const parts = [`c_${crop}`, `w_${width}`];
+
+      if (crop === "fill") {
+        parts.push(`g_${gravity}`);
+      }
+
+      if (Number.isFinite(height) && height > 0) {
+        parts.push(`h_${height}`);
+      }
+
+      parts.push(`f_${format}`, `q_${quality}`);
+      return `${injectCloudinaryTransform(secureUrl, parts.join(","))} ${width}w`;
+    })
+    .join(", ");
+}
+
+function getPanelThumbSizes(imageCount = 1) {
+  if (imageCount <= 1) {
+    return "(max-width: 767px) 100vw, 340px";
+  }
+
+  return "(max-width: 767px) 30vw, 96px";
+}
+
+function getLightboxSizes() {
+  return "100vw";
 }
 
 function buildAiPayload(post, details) {
@@ -354,9 +415,11 @@ function createClusterIcon(cluster) {
 
 function Lightbox({ images, currentIndex, onClose, onPrev, onNext, title }) {
   const dialogRef = useRef(null);
+  const touchStartXRef = useRef(null);
+  const touchDeltaXRef = useRef(0);
 
   useEffect(() => {
-    if (currentIndex < 0) return;
+    if (currentIndex < 0) return undefined;
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -365,10 +428,16 @@ function Lightbox({ images, currentIndex, onClose, onPrev, onNext, title }) {
       if (e.key === "Escape") {
         e.preventDefault();
         onClose?.();
-      } else if (e.key === "ArrowLeft") {
+        return;
+      }
+
+      if (e.key === "ArrowLeft") {
         e.preventDefault();
         onPrev?.();
-      } else if (e.key === "ArrowRight") {
+        return;
+      }
+
+      if (e.key === "ArrowRight") {
         e.preventDefault();
         onNext?.();
       }
@@ -386,10 +455,44 @@ function Lightbox({ images, currentIndex, onClose, onPrev, onNext, title }) {
   if (currentIndex < 0 || !Array.isArray(images) || !images[currentIndex]) return null;
 
   const image = images[currentIndex];
+  const alt = title ? `${title} image ${currentIndex + 1}` : `Post image ${currentIndex + 1}`;
+  const srcSet = buildCloudinarySrcSet(image.secureUrl, {
+    widths: [640, 960, 1280, 1600, 2000],
+    crop: "limit"
+  });
+
+  function handleTouchStart(e) {
+    const touch = e.touches?.[0];
+    if (!touch) return;
+    touchStartXRef.current = touch.clientX;
+    touchDeltaXRef.current = 0;
+  }
+
+  function handleTouchMove(e) {
+    const touch = e.touches?.[0];
+    if (!touch || touchStartXRef.current == null) return;
+    touchDeltaXRef.current = touch.clientX - touchStartXRef.current;
+  }
+
+  function handleTouchEnd() {
+    const deltaX = touchDeltaXRef.current;
+    touchStartXRef.current = null;
+    touchDeltaXRef.current = 0;
+
+    if (Math.abs(deltaX) < LIGHTBOX_SWIPE_THRESHOLD_PX) {
+      return;
+    }
+
+    if (deltaX > 0) {
+      onPrev?.();
+    } else {
+      onNext?.();
+    }
+  }
 
   return (
     <div
-      className="fixed inset-0 z-[1600] flex items-center justify-center bg-black/90 px-4 py-6"
+      className="fixed inset-0 z-[1600] flex items-center justify-center bg-black/90 px-3 py-4 sm:px-4 sm:py-6"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose?.();
       }}
@@ -398,6 +501,7 @@ function Lightbox({ images, currentIndex, onClose, onPrev, onNext, title }) {
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
+        aria-label="Image viewer"
         tabIndex={-1}
         className="relative flex max-h-full w-full max-w-6xl flex-col outline-none"
       >
@@ -410,11 +514,23 @@ function Lightbox({ images, currentIndex, onClose, onPrev, onNext, title }) {
           ✕
         </button>
 
-        <div className="mx-auto flex max-h-[85vh] w-full items-center justify-center">
+        <div
+          className="mx-auto flex max-h-[85vh] w-full items-center justify-center overflow-auto rounded-2xl"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          style={{ touchAction: "pan-y pinch-zoom" }}
+        >
           <img
             src={optimizeCloudinaryUrl(image.secureUrl, "full")}
-            alt={title ? `${title} image ${currentIndex + 1}` : `Post image ${currentIndex + 1}`}
-            className="max-h-[85vh] max-w-full rounded-2xl object-contain"
+            srcSet={srcSet}
+            sizes={getLightboxSizes()}
+            alt={alt}
+            loading="eager"
+            fetchPriority="high"
+            decoding="async"
+            draggable={false}
+            className="max-h-[85vh] max-w-full rounded-2xl object-contain select-none"
           />
         </div>
 
@@ -424,7 +540,7 @@ function Lightbox({ images, currentIndex, onClose, onPrev, onNext, title }) {
               type="button"
               onClick={onPrev}
               aria-label="Previous image"
-              className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-white/10 px-4 py-3 text-white transition hover:bg-white/20"
+              className="absolute left-0 top-1/2 inline-flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 px-3 py-3 text-white transition hover:bg-white/20"
             >
               ←
             </button>
@@ -433,7 +549,7 @@ function Lightbox({ images, currentIndex, onClose, onPrev, onNext, title }) {
               type="button"
               onClick={onNext}
               aria-label="Next image"
-              className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full bg-white/10 px-4 py-3 text-white transition hover:bg-white/20"
+              className="absolute right-0 top-1/2 inline-flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 px-3 py-3 text-white transition hover:bg-white/20"
             >
               →
             </button>
@@ -471,9 +587,17 @@ function ImageStrip({ title, previewImage, images, lightboxOpenAt, detailsLoadin
               >
                 <img
                   src={optimizeCloudinaryUrl(image.secureUrl, "thumb")}
+                  srcSet={buildCloudinarySrcSet(image.secureUrl, {
+                    widths: [240, 320, 480, 640],
+                    crop: "fill",
+                    gravity: "auto",
+                    height: 420
+                  })}
+                  sizes={getPanelThumbSizes(normalizedImages.length)}
                   alt={`${title} image ${index + 1}`}
                   className="h-28 w-full object-cover transition duration-300 group-hover:scale-[1.02]"
                   loading="lazy"
+                  decoding="async"
                 />
 
                 {showMoreBadge && (
@@ -510,10 +634,16 @@ function ImageStrip({ title, previewImage, images, lightboxOpenAt, detailsLoadin
     return (
       <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
         <img
-          src={optimizeCloudinaryUrl(previewImage, "panel")}
+          src={optimizeCloudinaryUrl(previewImage, "preview")}
+          srcSet={buildCloudinarySrcSet(previewImage, {
+            widths: [480, 768, 1024, 1440],
+            crop: "limit"
+          })}
+          sizes="(max-width: 767px) 100vw, 340px"
           alt={title}
           className="h-52 w-full object-cover"
           loading="lazy"
+          decoding="async"
         />
       </div>
     );

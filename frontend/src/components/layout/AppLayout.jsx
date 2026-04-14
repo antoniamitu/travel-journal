@@ -18,7 +18,12 @@ export default function AppLayout() {
 
       <div className="flex min-h-0 flex-1">
         {!hideSidebar && <Sidebar />}
-        <main className="relative z-0 min-w-0 flex-1">
+        <main
+          className={[
+            "relative z-0 min-w-0 flex-1",
+            hideSidebar ? "" : "pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-0"
+          ].join(" ")}
+        >
           <Outlet />
         </main>
       </div>
