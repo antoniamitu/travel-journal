@@ -11,6 +11,14 @@ import {
 const trimOrEmpty = (val) => (typeof val === "string" ? val.trim() : "");
 const trimLowerOrEmpty = (val) => (typeof val === "string" ? val.trim().toLowerCase() : "");
 
+function optionalTrimmedStringOrUndefined(val) {
+  if (val == null) return undefined;
+  if (typeof val !== "string") return val;
+
+  const trimmed = val.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
 // allow dots too, but still forbid traversal-like patterns
 const PUBLIC_ID_RE = /^[a-zA-Z0-9/_.-]+$/;
 
@@ -88,6 +96,28 @@ const postBodySchema = z
     country: z.preprocess(
       normalizeOptionalLocationText,
       z.string().max(100, "country must be at most 100 characters").optional()
+    ),
+
+    // Optional Nominatim metadata/signals used only by backend classification.
+    // Frontend does not choose category manually.
+    displayName: z.preprocess(
+      optionalTrimmedStringOrUndefined,
+      z.string().max(1200, "displayName must be at most 1200 characters").optional()
+    ),
+
+    osmClass: z.preprocess(
+      optionalTrimmedStringOrUndefined,
+      z.string().max(50, "osmClass must be at most 50 characters").optional()
+    ),
+
+    osmSubtype: z.preprocess(
+      optionalTrimmedStringOrUndefined,
+      z.string().max(100, "osmSubtype must be at most 100 characters").optional()
+    ),
+
+    addressType: z.preprocess(
+      optionalTrimmedStringOrUndefined,
+      z.string().max(50, "addressType must be at most 50 characters").optional()
     ),
 
     sentiment: z

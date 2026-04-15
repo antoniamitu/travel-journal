@@ -11,6 +11,15 @@ import {
 } from "../validators/post.validator.js";
 import { cleanupUploads, getUploadFolderForUser } from "../services/cloudinary.service.js";
 import { mapMapFeedRowToApi, mapPostToApi } from "../mappers/post.mapper.js";
+import {
+  classifyPlaceCategory,
+  isValidPlaceCategory,
+  PLACE_CATEGORY_VALUES,
+  shouldEnrichPlaceCategory
+} from "../utils/classifyPlaceCategory.js";
+import { mapNominatimSearchResults } from "../utils/mapNominatim.js";
+import { searchPlaceForEnrichment } from "../services/nominatim.service.js";
+import { canEnqueue, nominatimQueue } from "../services/nominatimQueue.js";
 
 const fixNegZero = (n) => (Object.is(n, -0) ? 0 : n);
 
@@ -24,6 +33,10 @@ const POST_API_SELECT = {
   location_name: true,
   city: true,
   country: true,
+  place_category: true,
+  osm_class: true,
+  osm_subtype: true,
+  address_type: true,
   sentiment: true,
   privacy: true,
   created_at: true,
@@ -43,6 +56,15 @@ const POST_API_SELECT = {
 const POST_OWNERSHIP_SELECT = {
   id: true,
   user_id: true,
+  latitude: true,
+  longitude: true,
+  location_name: true,
+  city: true,
+  country: true,
+  place_category: true,
+  osm_class: true,
+  osm_subtype: true,
+  address_type: true,
   images: {
     orderBy: { display_order: "asc" },
     select: {
@@ -62,6 +84,8 @@ const MAX_FEED_QUERY_LENGTH = 120;
 const DEFAULT_SUGGEST_LIMIT = 5;
 const MAX_SUGGEST_LIMIT = 10;
 const ALLOWED_FEED_SENTIMENTS = new Set(["positive", "neutral", "negative"]);
+const ALLOWED_FEED_CATEGORIES = new Set(PLACE_CATEGORY_VALUES);
+const DEFAULT_PLACE_CATEGORY = "other";
 const COMBINING_MARKS_RE = /[\u0300-\u036f]/g;
 const NON_ALPHANUMERIC_RE = /[^a-z0-9]+/g;
 
@@ -78,6 +102,7 @@ const FEED_POSTS_SELECT_SQL = Prisma.sql`
     p.location_name,
     p.city,
     p.country,
+    p.place_category,
     p.latitude,
     p.longitude,
     p.sentiment,
@@ -269,6 +294,7 @@ function parseFeedListQuery(query) {
   let q;
   let qSearchKey;
   let sentiment;
+  let category;
 
   if (query?.page != null && String(query.page).trim() !== "") {
     const rawPage = String(query.page).trim();
@@ -330,6 +356,16 @@ function parseFeedListQuery(query) {
     }
   }
 
+  if (query?.category != null && String(query.category).trim() !== "") {
+    const rawCategory = String(query.category).trim().toLowerCase();
+
+    if (!ALLOWED_FEED_CATEGORIES.has(rawCategory)) {
+      errors.category = `category must be one of: ${PLACE_CATEGORY_VALUES.join(", ")}`;
+    } else {
+      category = rawCategory;
+    }
+  }
+
   const offset = (page - 1) * limit;
   if (!Number.isSafeInteger(offset)) {
     errors.page = "page is too large";
@@ -339,7 +375,7 @@ function parseFeedListQuery(query) {
     throw new HttpError(400, "Validation failed", errors);
   }
 
-  return { page, limit, offset, q, qSearchKey, sentiment };
+  return { page, limit, offset, q, qSearchKey, sentiment, category };
 }
 
 function parseLocationSuggestQuery(query) {
@@ -381,6 +417,126 @@ function parseLocationSuggestQuery(query) {
   }
 
   return { q, qSearchKey, limit };
+}
+
+function normalizeOptionalText(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+function normalizeStoredPlaceCategory(value) {
+  if (typeof value !== "string") {
+    return DEFAULT_PLACE_CATEGORY;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return isValidPlaceCategory(normalized) ? normalized : DEFAULT_PLACE_CATEGORY;
+}
+
+function isSameLocationCore(existingPost, incomingLocation) {
+  return (
+    fixNegZero(existingPost.latitude) === fixNegZero(incomingLocation.latitude) &&
+    fixNegZero(existingPost.longitude) === fixNegZero(incomingLocation.longitude) &&
+    normalizeOptionalText(existingPost.location_name) ===
+      normalizeOptionalText(incomingLocation.locationName) &&
+    normalizeOptionalText(existingPost.city) === normalizeOptionalText(incomingLocation.city) &&
+    normalizeOptionalText(existingPost.country) ===
+      normalizeOptionalText(incomingLocation.country)
+  );
+}
+
+function buildLocationClassificationInput(incomingLocation, existingPost = null) {
+  const sameLocation = existingPost ? isSameLocationCore(existingPost, incomingLocation) : false;
+
+  return {
+    locationName: incomingLocation.locationName,
+    city: incomingLocation.city ?? null,
+    country: incomingLocation.country ?? null,
+    displayName: incomingLocation.displayName ?? null,
+    osmClass: incomingLocation.osmClass ?? (sameLocation ? existingPost?.osm_class ?? null : null),
+    osmSubtype:
+      incomingLocation.osmSubtype ?? (sameLocation ? existingPost?.osm_subtype ?? null : null),
+    addressType:
+      incomingLocation.addressType ?? (sameLocation ? existingPost?.address_type ?? null : null)
+  };
+}
+
+async function resolvePlaceClassification(input, { logContext = {} } = {}) {
+  const baseInput = {
+    locationName: input.locationName,
+    city: input.city ?? null,
+    country: input.country ?? null,
+    displayName: input.displayName ?? null,
+    osmClass: input.osmClass ?? null,
+    osmSubtype: input.osmSubtype ?? null,
+    addressType: input.addressType ?? null
+  };
+
+  let placeCategory = classifyPlaceCategory(baseInput);
+  let osmClass = baseInput.osmClass;
+  let osmSubtype = baseInput.osmSubtype;
+  let addressType = baseInput.addressType;
+
+  if (placeCategory === DEFAULT_PLACE_CATEGORY && shouldEnrichPlaceCategory(baseInput)) {
+    if (canEnqueue()) {
+      try {
+        const raw = await nominatimQueue.add(() =>
+          searchPlaceForEnrichment(baseInput.locationName, baseInput.city)
+        );
+
+        const enriched = mapNominatimSearchResults(raw)[0] || null;
+
+        if (enriched) {
+          const enrichedInput = {
+            locationName: enriched.locationName || baseInput.locationName,
+            city: enriched.city || baseInput.city,
+            country: enriched.country || baseInput.country,
+            displayName: enriched.displayName || baseInput.displayName,
+            osmClass: enriched.osmClass || baseInput.osmClass,
+            osmSubtype: enriched.osmSubtype || baseInput.osmSubtype,
+            addressType: enriched.addressType || baseInput.addressType
+          };
+
+          const enrichedCategory = classifyPlaceCategory(enrichedInput);
+
+          // Keep improved internal OSM metadata even if the final category still remains "other".
+          // These fields are useful later for debugging, reclasificare and potential backfill.
+          osmClass = normalizeOptionalText(enrichedInput.osmClass);
+          osmSubtype = normalizeOptionalText(enrichedInput.osmSubtype);
+          addressType = normalizeOptionalText(enrichedInput.addressType);
+
+          if (enrichedCategory !== DEFAULT_PLACE_CATEGORY) {
+            placeCategory = enrichedCategory;
+          }
+        }
+      } catch (err) {
+        console.warn("Place-category enrichment failed; continuing with base classification", {
+          ...logContext,
+          locationName: baseInput.locationName,
+          city: baseInput.city,
+          error: err?.message || String(err)
+        });
+      }
+    } else {
+      console.warn("Skipped place-category enrichment because Nominatim queue is busy", {
+        ...logContext,
+        locationName: baseInput.locationName,
+        city: baseInput.city
+      });
+    }
+  }
+
+  if (!isValidPlaceCategory(placeCategory)) {
+    placeCategory = DEFAULT_PLACE_CATEGORY;
+  }
+
+  return {
+    placeCategory,
+    osmClass: normalizeOptionalText(osmClass),
+    osmSubtype: normalizeOptionalText(osmSubtype),
+    addressType: normalizeOptionalText(addressType)
+  };
 }
 
 async function validateIncomingImagesForUser(userId, images) {
@@ -433,12 +589,15 @@ async function cleanupUnattachedUploads(prisma, userId, publicIds, context) {
       }
     });
   } catch (err) {
-    console.warn("Skipped unattached upload cleanup because DB attachment state could not be verified", {
-      ...context,
-      userId,
-      publicIds: ids,
-      error: err?.message || String(err)
-    });
+    console.warn(
+      "Skipped unattached upload cleanup because DB attachment state could not be verified",
+      {
+        ...context,
+        userId,
+        publicIds: ids,
+        error: err?.message || String(err)
+      }
+    );
     return;
   }
 
@@ -511,17 +670,39 @@ export async function create(req, res) {
 
   await validateIncomingImagesForUser(userId, images);
 
+  const classification = await resolvePlaceClassification(
+    {
+      locationName: parsed.data.locationName,
+      city: parsed.data.city,
+      country: parsed.data.country,
+      displayName: parsed.data.displayName,
+      osmClass: parsed.data.osmClass,
+      osmSubtype: parsed.data.osmSubtype,
+      addressType: parsed.data.addressType
+    },
+    {
+      logContext: {
+        operation: "create",
+        userId
+      }
+    }
+  );
+
   try {
     const created = await prisma.post.create({
       data: {
         user_id: userId,
         title: parsed.data.title,
         content: parsed.data.content,
-        latitude,       
+        latitude,
         longitude,
         location_name: parsed.data.locationName,
         city: parsed.data.city,
         country: parsed.data.country,
+        place_category: classification.placeCategory,
+        osm_class: classification.osmClass,
+        osm_subtype: classification.osmSubtype,
+        address_type: classification.addressType,
         sentiment: parsed.data.sentiment,
         privacy: parsed.data.privacy,
         ...(images.length > 0
@@ -565,7 +746,7 @@ export async function create(req, res) {
 export async function listFeed(req, res) {
   const prisma = getPrisma();
   const userId = req.userId;
-  const { page, limit, offset, qSearchKey, sentiment } = parseFeedListQuery(req.query);
+  const { page, limit, offset, qSearchKey, sentiment, category } = parseFeedListQuery(req.query);
 
   const searchSql = qSearchKey
     ? Prisma.sql`
@@ -588,6 +769,7 @@ export async function listFeed(req, res) {
     : Prisma.empty;
 
   const sentimentSql = sentiment ? Prisma.sql` AND p.sentiment = ${sentiment}` : Prisma.empty;
+  const categorySql = category ? Prisma.sql` AND p.place_category = ${category}` : Prisma.empty;
 
   const rows = await prisma.$queryRaw(
     Prisma.sql`
@@ -596,6 +778,7 @@ export async function listFeed(req, res) {
         p.privacy = 'public'
         AND p.user_id <> ${userId}
         ${sentimentSql}
+        ${categorySql}
         ${searchSql}
       ORDER BY p.created_at DESC, p.id DESC
       LIMIT ${limit + 1}
@@ -777,6 +960,7 @@ export async function getById(req, res) {
 
   return res.status(200).json({ ok: true, post: mapPostToApi(post, userId) });
 }
+
 // Step 2.4 — PUT /api/posts/:id
 export async function update(req, res) {
   const paramsParsed = postIdParamsSchema.safeParse(req.params);
@@ -811,6 +995,43 @@ export async function update(req, res) {
     throw new HttpError(404, "Not found");
   }
 
+  const incomingLocation = {
+    latitude,
+    longitude,
+    locationName: bodyParsed.data.locationName,
+    city: bodyParsed.data.city,
+    country: bodyParsed.data.country,
+    displayName: bodyParsed.data.displayName,
+    osmClass: bodyParsed.data.osmClass,
+    osmSubtype: bodyParsed.data.osmSubtype,
+    addressType: bodyParsed.data.addressType
+  };
+
+  const sameLocation = isSameLocationCore(existingPost, incomingLocation);
+
+  let classification;
+  if (sameLocation && isValidPlaceCategory(normalizeStoredPlaceCategory(existingPost.place_category))) {
+    // If the physical location did not change and DB already holds a valid category,
+    // reuse the stored category and stored OSM metadata regardless of optional UI signals.
+    classification = {
+      placeCategory: normalizeStoredPlaceCategory(existingPost.place_category),
+      osmClass: normalizeOptionalText(existingPost.osm_class),
+      osmSubtype: normalizeOptionalText(existingPost.osm_subtype),
+      addressType: normalizeOptionalText(existingPost.address_type)
+    };
+  } else {
+    classification = await resolvePlaceClassification(
+      buildLocationClassificationInput(incomingLocation, existingPost),
+      {
+        logContext: {
+          operation: "update",
+          userId,
+          postId
+        }
+      }
+    );
+  }
+
   const existingByPublicId = new Map(existingPost.images.map((img) => [img.public_id, img]));
   const incomingSet = new Set(images.map((img) => img.publicId));
 
@@ -833,6 +1054,10 @@ export async function update(req, res) {
           location_name: bodyParsed.data.locationName,
           city: bodyParsed.data.city,
           country: bodyParsed.data.country,
+          place_category: classification.placeCategory,
+          osm_class: classification.osmClass,
+          osm_subtype: classification.osmSubtype,
+          address_type: classification.addressType,
           sentiment: bodyParsed.data.sentiment,
           privacy: bodyParsed.data.privacy
         }

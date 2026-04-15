@@ -4,9 +4,16 @@ import { ENV } from "../config/env.js";
 import { HttpError } from "../utils/httpError.js";
 
 const BASE_URL = ENV.NOMINATIM_BASE_URL;
+const REQUEST_TIMEOUT_MS = 4000;
+const RETRY_DELAY_MS = 1000;
 
 function isUpstreamUnavailable(status) {
   return status === 503 || status === 504;
+}
+
+function shouldRetryNominatimError(err) {
+  const status = err?.statusCode ?? err?.status ?? null;
+  return status === 503 || status === 504 || err?.code === "ECONNABORTED";
 }
 
 function sleep(ms) {
@@ -36,7 +43,7 @@ async function nominatimGet(path, params) {
   try {
     const res = await axios.get(`${BASE_URL}${path}`, {
       params,
-      timeout: 8000,
+      timeout: REQUEST_TIMEOUT_MS,
       headers: {
         "User-Agent": ENV.NOMINATIM_USER_AGENT,
         Accept: "application/json"
@@ -72,50 +79,62 @@ async function nominatimGet(path, params) {
   }
 }
 
-export async function forwardGeocode(query) {
+async function getWithSingleRetry(path, params) {
   try {
-    return await nominatimGet("/search", {
-      q: query,
-      format: "json",
-      addressdetails: 1,
-      limit: 5
-    });
+    return await nominatimGet(path, params);
   } catch (err) {
-    // Retry once on 503/504
-    if (err?.statusCode === 503 || err?.statusCode === 504) {
-      await sleep(1000);
-      return await nominatimGet("/search", {
-        q: query,
-        format: "json",
-        addressdetails: 1,
-        limit: 5
-      });
+    if (shouldRetryNominatimError(err)) {
+      await sleep(RETRY_DELAY_MS);
+      return await nominatimGet(path, params);
     }
+
     throw err;
   }
 }
 
-export async function reverseGeocode(lat, lng) {
-  try {
-    return await nominatimGet("/reverse", {
-      lat,
-      lon: lng,
-      format: "json",
-      addressdetails: 1,
-      zoom: 18
-    });
-  } catch (err) {
-    // Retry once on 503/504
-    if (err?.statusCode === 503 || err?.statusCode === 504) {
-      await sleep(1000);
-      return await nominatimGet("/reverse", {
-        lat,
-        lon: lng,
-        format: "json",
-        addressdetails: 1,
-        zoom: 18
-      });
-    }
-    throw err;
+function buildEnrichmentQuery(locationName, city) {
+  const parts = [locationName, city]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return null;
   }
+
+  return parts.join(", ");
+}
+
+export async function forwardGeocode(query) {
+  return await getWithSingleRetry("/search", {
+    q: query,
+    format: "json",
+    addressdetails: 1,
+    limit: 5
+  });
+}
+
+export async function reverseGeocode(lat, lng) {
+  return await getWithSingleRetry("/reverse", {
+    lat,
+    lon: lng,
+    format: "json",
+    addressdetails: 1,
+    zoom: 18
+  });
+}
+
+// Dedicated helper for place-category enrichment.
+// Query format: locationName + city, limit=1.
+export async function searchPlaceForEnrichment(locationName, city) {
+  const query = buildEnrichmentQuery(locationName, city);
+  if (!query) {
+    return [];
+  }
+
+  return await getWithSingleRetry("/search", {
+    q: query,
+    format: "json",
+    addressdetails: 1,
+    limit: 1
+  });
 }

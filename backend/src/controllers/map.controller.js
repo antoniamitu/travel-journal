@@ -20,6 +20,7 @@ const MAP_POSTS_SELECT_SQL = Prisma.sql`
       ELSE p.content
     END AS content_preview,
     p.location_name,
+    p.place_category,
     p.latitude,
     p.longitude,
     p.sentiment,

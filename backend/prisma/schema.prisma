@@ -71,19 +71,31 @@ model User {
 // 2. POSTS (PRD 3 — Post Management)
 // ============================================================
 model Post {
-  id            Int      @id @default(autoincrement())
+  id            Int     @id @default(autoincrement())
   user_id       Int
-  title         String   @db.VarChar(100)
-  content       String   @db.Text
-  latitude      Float    @db.DoublePrecision
-  longitude     Float    @db.DoublePrecision
-  location_name String   @db.VarChar(500)
-  city          String?  @db.VarChar(100)
-  country       String?  @db.VarChar(100)
-  sentiment     String   @db.VarChar(20)
-  privacy       String   @db.VarChar(20)
-  created_at    DateTime @default(now()) @db.Timestamptz()
-  updated_at    DateTime @updatedAt @db.Timestamptz()
+  title         String  @db.VarChar(100)
+  content       String  @db.Text
+  latitude      Float   @db.DoublePrecision
+  longitude     Float   @db.DoublePrecision
+  location_name String  @db.VarChar(500)
+  city          String? @db.VarChar(100)
+  country       String? @db.VarChar(100)
+
+  // Automatic place classification
+  // Kept as string for migration safety and easier iteration.
+  // Allowed values will be enforced in application code.
+  place_category String @default("other") @db.VarChar(30)
+
+  // Stored OSM metadata used internally for classification, debugging,
+  // and future backfill/reclassification without re-geocoding.
+  osm_class    String? @db.VarChar(50)
+  osm_subtype  String? @db.VarChar(100)
+  address_type String? @db.VarChar(50)
+
+  sentiment  String   @db.VarChar(20)
+  privacy    String   @db.VarChar(20)
+  created_at DateTime @default(now()) @db.Timestamptz()
+  updated_at DateTime @updatedAt @db.Timestamptz()
 
   // PostGIS geography column — maintained by DB trigger (NOT set by Prisma)
   // ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography
@@ -100,6 +112,7 @@ model Post {
   // Indexes
   @@index([user_id])
   @@index([created_at])
+  @@index([place_category])
   @@map("posts")
 }
 

@@ -30,6 +30,7 @@ const PROFILE_POSTS_SELECT_SQL = Prisma.sql`
     p.location_name,
     p.city,
     p.country,
+    p.place_category,
     p.latitude,
     p.longitude,
     p.sentiment,
