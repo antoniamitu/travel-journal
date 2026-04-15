@@ -473,6 +473,20 @@ export async function deleteProfile(req, res) {
     posts.flatMap((post) => post.images.map((image) => image.public_id))
   );
 
+  try {
+    await prisma.user.delete({
+      where: {
+        id: userId
+      }
+    });
+  } catch (err) {
+    if (err?.code === "P2025") {
+      throw new HttpError(401, "Unauthorized");
+    }
+
+    throw err;
+  }
+
   let cleanupResult = {
     deleted: [],
     failed: publicIds.slice()
@@ -498,20 +512,6 @@ export async function deleteProfile(req, res) {
       failedCount: cleanupResult.failed.length,
       failedPublicIds: cleanupResult.failed
     });
-  }
-
-  try {
-    await prisma.user.delete({
-      where: {
-        id: userId
-      }
-    });
-  } catch (err) {
-    if (err?.code === "P2025") {
-      throw new HttpError(401, "Unauthorized");
-    }
-
-    throw err;
   }
 
   return res.status(200).json({

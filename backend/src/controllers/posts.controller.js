@@ -425,13 +425,18 @@ function normalizeOptionalText(value) {
   return trimmed === "" ? null : trimmed;
 }
 
-function normalizeStoredPlaceCategory(value) {
+function getReusableStoredPlaceCategory(value) {
   if (typeof value !== "string") {
-    return DEFAULT_PLACE_CATEGORY;
+    return null;
   }
 
   const normalized = value.trim().toLowerCase();
-  return isValidPlaceCategory(normalized) ? normalized : DEFAULT_PLACE_CATEGORY;
+
+  if (!isValidPlaceCategory(normalized) || normalized === DEFAULT_PLACE_CATEGORY) {
+    return null;
+  }
+
+  return normalized;
 }
 
 function isSameLocationCore(existingPost, incomingLocation) {
@@ -1007,14 +1012,20 @@ export async function update(req, res) {
     addressType: bodyParsed.data.addressType
   };
 
-  const sameLocation = isSameLocationCore(existingPost, incomingLocation);
+    const sameLocation = isSameLocationCore(existingPost, incomingLocation);
+
+  const reusableStoredPlaceCategory = sameLocation
+    ? getReusableStoredPlaceCategory(existingPost.place_category)
+    : null;
 
   let classification;
-  if (sameLocation && isValidPlaceCategory(normalizeStoredPlaceCategory(existingPost.place_category))) {
-    // If the physical location did not change and DB already holds a valid category,
-    // reuse the stored category and stored OSM metadata regardless of optional UI signals.
+  if (reusableStoredPlaceCategory) {
+    // If the physical location did not change and DB already holds a strong stored category,
+    // reuse it together with the stored OSM metadata.
+    // We intentionally DO NOT reuse "other" here, so legacy/incomplete posts can be reclassified
+    // when a later update sends richer OSM signals for the same location.
     classification = {
-      placeCategory: normalizeStoredPlaceCategory(existingPost.place_category),
+      placeCategory: reusableStoredPlaceCategory,
       osmClass: normalizeOptionalText(existingPost.osm_class),
       osmSubtype: normalizeOptionalText(existingPost.osm_subtype),
       addressType: normalizeOptionalText(existingPost.address_type)
