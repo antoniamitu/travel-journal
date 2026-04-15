@@ -39,6 +39,10 @@ const EMPTY_FORM = {
   locationName: "",
   city: "",
   country: "",
+  displayName: "",
+  osmClass: "",
+  osmSubtype: "",
+  addressType: "",
   sentiment: "neutral",
   privacy: "private"
 };
@@ -123,6 +127,10 @@ function mapPostToForm(post) {
     locationName: post?.locationName || "",
     city: post?.city || "",
     country: post?.country || "",
+    displayName: post?.displayName || "",
+    osmClass: post?.osmClass || "",
+    osmSubtype: post?.osmSubtype || "",
+    addressType: post?.addressType || "",
     sentiment: post?.sentiment || "neutral",
     privacy: post?.privacy || "private"
   };
@@ -154,6 +162,10 @@ function buildSnapshot(form, images) {
     locationName: form.locationName,
     city: form.city,
     country: form.country,
+    displayName: form.displayName,
+    osmClass: form.osmClass,
+    osmSubtype: form.osmSubtype,
+    addressType: form.addressType,
     sentiment: form.sentiment,
     privacy: form.privacy,
     images: images.map((img) => ({
@@ -768,7 +780,11 @@ export default function PostEditorPage() {
       longitude: lng,
       locationName,
       city: place.city || "",
-      country: place.country || ""
+      country: place.country || "",
+      displayName: String(place.displayName || "").trim(),
+      osmClass: String(place.osmClass || "").trim(),
+      osmSubtype: String(place.osmSubtype || "").trim(),
+      addressType: String(place.addressType || "").trim()
     }));
 
     setLocationQuery(locationName);
@@ -785,7 +801,11 @@ export default function PostEditorPage() {
       longitude: null,
       locationName: "",
       city: "",
-      country: ""
+      country: "",
+      displayName: "",
+      osmClass: "",
+      osmSubtype: "",
+      addressType: ""
     }));
     setFieldErrors((prev) => ({
       ...prev,
@@ -861,7 +881,10 @@ export default function PostEditorPage() {
             locationName: fallbackLabel,
             displayName: fallbackLabel,
             city: "",
-            country: ""
+            country: "",
+            osmClass: "",
+            osmSubtype: "",
+            addressType: ""
           };
           applyPlaceToForm(fallbackPlace, fallbackLabel);
           setReverseStatus("Could not resolve an address. Using dropped pin.");
@@ -883,7 +906,10 @@ export default function PostEditorPage() {
           locationName: fallbackLabel,
           displayName: fallbackLabel,
           city: "",
-          country: ""
+          country: "",
+          osmClass: "",
+          osmSubtype: "",
+          addressType: ""
         };
 
         applyPlaceToForm(fallbackPlace, fallbackLabel);
@@ -1254,6 +1280,10 @@ export default function PostEditorPage() {
         locationName: form.locationName.trim(),
         city: form.city?.trim() || "",
         country: form.country?.trim() || "",
+        displayName: form.displayName?.trim() || "",
+        osmClass: form.osmClass?.trim() || "",
+        osmSubtype: form.osmSubtype?.trim() || "",
+        addressType: form.addressType?.trim() || "",
         sentiment: form.sentiment,
         privacy: form.privacy,
         images: images.map((item) => ({
@@ -1283,11 +1313,14 @@ export default function PostEditorPage() {
               lat: savedPost.latitude,
               lng: savedPost.longitude,
               locationName: savedPost.locationName,
-              displayName: savedPost.locationName,
+              displayName: form.displayName?.trim() || savedPost.locationName,
               city: savedPost.city || "",
-              country: savedPost.country || ""
+              country: savedPost.country || "",
+              osmClass: form.osmClass?.trim() || "",
+              osmSubtype: form.osmSubtype?.trim() || "",
+              addressType: form.addressType?.trim() || ""
             },
-            "search"
+            "post-create"
           );
           navigate("/map", { replace: true });
         }

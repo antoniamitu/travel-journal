@@ -303,13 +303,75 @@ function getSentimentUi(sentiment) {
   }
 }
 
-function getPostMarkerIcon(sentiment, isActive = false) {
-  const key = `${sentiment}:${isActive ? "active" : "idle"}`;
+const PLACE_CATEGORY_UI = {
+  historical: {
+    label: "Historical",
+    icon: "🏛️",
+    shortLabel: "H",
+    badge: "bg-stone-100 text-stone-700 ring-stone-200"
+  },
+  religious: {
+    label: "Religious",
+    icon: "🕍",
+    shortLabel: "R",
+    badge: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200"
+  },
+  nature: {
+    label: "Nature",
+    icon: "🌿",
+    shortLabel: "N",
+    badge: "bg-green-50 text-green-700 ring-green-200"
+  },
+  entertainment: {
+    label: "Entertainment",
+    icon: "🎭",
+    shortLabel: "E",
+    badge: "bg-indigo-50 text-indigo-700 ring-indigo-200"
+  },
+  food_drink: {
+    label: "Food & Drink",
+    icon: "🍽️",
+    shortLabel: "F",
+    badge: "bg-orange-50 text-orange-700 ring-orange-200"
+  },
+  shopping: {
+    label: "Shopping",
+    icon: "🛍️",
+    shortLabel: "S",
+    badge: "bg-pink-50 text-pink-700 ring-pink-200"
+  },
+  urban_landmark: {
+    label: "Urban Landmark",
+    icon: "🏙️",
+    shortLabel: "U",
+    badge: "bg-cyan-50 text-cyan-700 ring-cyan-200"
+  },
+  other: {
+    label: "Other",
+    icon: "📍",
+    shortLabel: "O",
+    badge: "bg-slate-100 text-slate-700 ring-slate-200"
+  }
+};
+
+function normalizePlaceCategory(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(PLACE_CATEGORY_UI, normalized) ? normalized : "other";
+}
+
+function getPlaceCategoryUi(category) {
+  return PLACE_CATEGORY_UI[normalizePlaceCategory(category)] || PLACE_CATEGORY_UI.other;
+}
+
+function getPostMarkerIcon(sentiment, placeCategory, isActive = false) {
+  const normalizedCategory = normalizePlaceCategory(placeCategory);
+  const key = `${sentiment}:${normalizedCategory}:${isActive ? "active" : "idle"}`;
   const cached = markerIconCache.get(key);
   if (cached) return cached;
 
   const ui = getSentimentUi(sentiment);
-  const circleSize = isActive ? 26 : 22;
+  const categoryUi = getPlaceCategoryUi(normalizedCategory);
+  const circleSize = isActive ? 28 : 24;
   const pointerHeight = isActive ? 12 : 10;
   const pointerHalf = isActive ? 7 : 6;
   const shadow = isActive
@@ -327,8 +389,16 @@ function getPostMarkerIcon(sentiment, isActive = false) {
           border:3px solid #ffffff;
           box-shadow:${shadow};
           transition:transform 200ms ease;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          color:#ffffff;
+          font-size:${isActive ? "12px" : "11px"};
+          font-weight:800;
+          font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          letter-spacing:0.02em;
         "
-      ></div>
+      >${categoryUi.shortLabel}</div>
       <div
         style="
           width:0;
@@ -670,6 +740,7 @@ function MapPostPanel({
 }) {
   const hasPost = Boolean(post);
   const sentimentUi = hasPost ? getSentimentUi(post.sentiment) : getSentimentUi("neutral");
+  const placeCategoryUi = getPlaceCategoryUi(details?.placeCategory || post?.placeCategory);
   const detailImages = Array.isArray(details?.images) ? details.images : [];
 
   const aiStatus = aiState?.status || "idle";
@@ -780,6 +851,13 @@ function MapPostPanel({
 
           <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
             {post.privacy === "public" ? "🌍 Public" : "🔒 Private"}
+          </span>
+
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${placeCategoryUi.badge}`}
+          >
+            <span aria-hidden="true">{placeCategoryUi.icon}</span>
+            <span>{placeCategoryUi.label}</span>
           </span>
 
           <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
@@ -1538,7 +1616,7 @@ export default function MapPage() {
               <Marker
                 key={post.id}
                 position={[Number(post.latitude), Number(post.longitude)]}
-                icon={getPostMarkerIcon(post.sentiment, selectedPost?.id === post.id)}
+                icon={getPostMarkerIcon(post.sentiment, post.placeCategory, selectedPost?.id === post.id)}
                 postSentiment={post.sentiment}
                 eventHandlers={{
                   click: () => {
@@ -1576,20 +1654,36 @@ export default function MapPage() {
             </div>
 
             <div className="mt-4 border-t border-white/15 pt-3 text-sm text-white/85">
-              <div className="font-medium">Sentiment pins</div>
+              <div className="font-medium">Marker legend</div>
+
               <div className="mt-2 space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="inline-block h-3 w-3 rounded-full bg-emerald-500" />
-                  <span>Positive</span>
+                  <span>Positive sentiment</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="inline-block h-3 w-3 rounded-full bg-amber-500" />
-                  <span>Neutral</span>
+                  <span>Neutral sentiment</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="inline-block h-3 w-3 rounded-full bg-rose-500" />
-                  <span>Negative</span>
+                  <span>Negative sentiment</span>
                 </div>
+              </div>
+
+              <div className="mt-3 text-xs text-white/75">
+                The letter inside each pin shows place category:
+              </div>
+
+              <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-white/85">
+                <span>H = Historical</span>
+                <span>R = Religious</span>
+                <span>N = Nature</span>
+                <span>E = Entertainment</span>
+                <span>F = Food &amp; Drink</span>
+                <span>S = Shopping</span>
+                <span>U = Urban Landmark</span>
+                <span>O = Other</span>
               </div>
             </div>
           </div>

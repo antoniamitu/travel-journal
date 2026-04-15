@@ -90,6 +90,58 @@ function getPrivacyUi(privacy) {
   };
 }
 
+const PLACE_CATEGORY_UI = {
+  historical: {
+    label: "Historical",
+    icon: "🏛️",
+    badge: "bg-stone-100 text-stone-700 ring-stone-200"
+  },
+  religious: {
+    label: "Religious",
+    icon: "🕍",
+    badge: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200"
+  },
+  nature: {
+    label: "Nature",
+    icon: "🌿",
+    badge: "bg-green-50 text-green-700 ring-green-200"
+  },
+  entertainment: {
+    label: "Entertainment",
+    icon: "🎭",
+    badge: "bg-indigo-50 text-indigo-700 ring-indigo-200"
+  },
+  food_drink: {
+    label: "Food & Drink",
+    icon: "🍽️",
+    badge: "bg-orange-50 text-orange-700 ring-orange-200"
+  },
+  shopping: {
+    label: "Shopping",
+    icon: "🛍️",
+    badge: "bg-pink-50 text-pink-700 ring-pink-200"
+  },
+  urban_landmark: {
+    label: "Urban Landmark",
+    icon: "🏙️",
+    badge: "bg-cyan-50 text-cyan-700 ring-cyan-200"
+  },
+  other: {
+    label: "Other",
+    icon: "📍",
+    badge: "bg-slate-100 text-slate-700 ring-slate-200"
+  }
+};
+
+function normalizePlaceCategory(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(PLACE_CATEGORY_UI, normalized) ? normalized : "other";
+}
+
+function getPlaceCategoryUi(category) {
+  return PLACE_CATEGORY_UI[normalizePlaceCategory(category)] || PLACE_CATEGORY_UI.other;
+}
+
 function isCloudinaryUrl(url) {
   return typeof url === "string" && url.includes(CLOUDINARY_UPLOAD_SEGMENT);
 }
@@ -468,6 +520,7 @@ export default function PostDetailPage() {
 
   const sentimentUi = useMemo(() => getSentimentUi(post?.sentiment), [post?.sentiment]);
   const privacyUi = useMemo(() => getPrivacyUi(post?.privacy), [post?.privacy]);
+  const placeCategoryUi = useMemo(() => getPlaceCategoryUi(post?.placeCategory), [post?.placeCategory]);
 
   async function handleDelete() {
     if (!post?.id || isDeleting) return;
@@ -538,6 +591,13 @@ export default function PostDetailPage() {
                   >
                     <span aria-hidden="true">{sentimentUi.emoji}</span>
                     <span>{sentimentUi.label}</span>
+                  </span>
+
+                  <span
+                    className={`inline-flex min-h-9 items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${placeCategoryUi.badge}`}
+                  >
+                    <span aria-hidden="true">{placeCategoryUi.icon}</span>
+                    <span>{placeCategoryUi.label}</span>
                   </span>
                 </div>
 
@@ -629,6 +689,15 @@ export default function PostDetailPage() {
                     {post.city || post.country
                       ? [post.city, post.country].filter(Boolean).join(", ")
                       : post.locationName}
+                  </div>
+
+                  <div className="mt-3">
+                    <span
+                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${placeCategoryUi.badge}`}
+                    >
+                      <span aria-hidden="true">{placeCategoryUi.icon}</span>
+                      <span>{placeCategoryUi.label}</span>
+                    </span>
                   </div>
                 </div>
 

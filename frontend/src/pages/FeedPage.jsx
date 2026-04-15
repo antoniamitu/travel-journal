@@ -10,7 +10,8 @@ const AI_COOLDOWN_MS = 60_000;
 
 const DEFAULT_FEED_FILTERS = {
   q: "",
-  sentiment: "all"
+  sentiment: "all",
+  category: "all"
 };
 
 const FEED_SENTIMENT_OPTIONS = [
@@ -19,6 +20,70 @@ const FEED_SENTIMENT_OPTIONS = [
   { key: "neutral", label: "Neutral" },
   { key: "negative", label: "Negative" }
 ];
+
+const FEED_CATEGORY_OPTIONS = [
+  { key: "all", label: "All categories" },
+  { key: "historical", label: "Historical" },
+  { key: "religious", label: "Religious" },
+  { key: "nature", label: "Nature" },
+  { key: "entertainment", label: "Entertainment" },
+  { key: "food_drink", label: "Food & Drink" },
+  { key: "shopping", label: "Shopping" },
+  { key: "urban_landmark", label: "Urban Landmark" },
+  { key: "other", label: "Other" }
+];
+
+const PLACE_CATEGORY_UI = {
+  historical: {
+    label: "Historical",
+    icon: "🏛️",
+    badge: "bg-stone-100 text-stone-700 ring-stone-200"
+  },
+  religious: {
+    label: "Religious",
+    icon: "🕍",
+    badge: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200"
+  },
+  nature: {
+    label: "Nature",
+    icon: "🌿",
+    badge: "bg-green-50 text-green-700 ring-green-200"
+  },
+  entertainment: {
+    label: "Entertainment",
+    icon: "🎭",
+    badge: "bg-indigo-50 text-indigo-700 ring-indigo-200"
+  },
+  food_drink: {
+    label: "Food & Drink",
+    icon: "🍽️",
+    badge: "bg-orange-50 text-orange-700 ring-orange-200"
+  },
+  shopping: {
+    label: "Shopping",
+    icon: "🛍️",
+    badge: "bg-pink-50 text-pink-700 ring-pink-200"
+  },
+  urban_landmark: {
+    label: "Urban Landmark",
+    icon: "🏙️",
+    badge: "bg-cyan-50 text-cyan-700 ring-cyan-200"
+  },
+  other: {
+    label: "Other",
+    icon: "📍",
+    badge: "bg-slate-100 text-slate-700 ring-slate-200"
+  }
+};
+
+function normalizeFeedCategory(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(PLACE_CATEGORY_UI, normalized) ? normalized : "other";
+}
+
+function getPlaceCategoryUi(category) {
+  return PLACE_CATEGORY_UI[normalizeFeedCategory(category)] || PLACE_CATEGORY_UI.other;
+}
 
 function formatDate(value) {
   if (!value) return "—";
@@ -200,7 +265,11 @@ function buildMapSelection(post) {
 }
 
 function hasActiveFeedFilters(filters) {
-  return Boolean(String(filters?.q || "").trim()) || filters?.sentiment !== "all";
+  return (
+    Boolean(String(filters?.q || "").trim()) ||
+    filters?.sentiment !== "all" ||
+    filters?.category !== "all"
+  );
 }
 
 function SafeFeedImage({ src, alt, className }) {
@@ -248,7 +317,15 @@ function FeedHero() {
   );
 }
 
-function FeedFiltersBar({ filters, isBusy, onSentimentChange, onClearSentiment, onClearSearch }) {
+function FeedFiltersBar({
+  filters,
+  isBusy,
+  onSentimentChange,
+  onCategoryChange,
+  onClearSentiment,
+  onClearCategory,
+  onClearSearch
+}) {
   const hasFilters = hasActiveFeedFilters(filters);
 
   return (
@@ -263,7 +340,8 @@ function FeedFiltersBar({ filters, isBusy, onSentimentChange, onClearSentiment, 
               Refine the current search
             </h2>
             <p className="mt-2 text-sm text-slate-600">
-              Use the top navigation search bar for places, then narrow the feed here by sentiment.
+              Use the top navigation search bar for places, then narrow the feed here by sentiment
+              or place category.
             </p>
           </div>
 
@@ -290,32 +368,79 @@ function FeedFiltersBar({ filters, isBusy, onSentimentChange, onClearSentiment, 
                   Clear sentiment
                 </button>
               ) : null}
+
+              {filters.category !== "all" ? (
+                <button
+                  type="button"
+                  onClick={onClearCategory}
+                  disabled={isBusy}
+                  className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Clear category
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          {FEED_SENTIMENT_OPTIONS.map((option) => {
-            const active = filters.sentiment === option.key;
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Sentiment
+          </div>
 
-            return (
-              <button
-                key={option.key}
-                type="button"
-                onClick={() => onSentimentChange(option.key)}
-                disabled={isBusy}
-                className={[
-                  "inline-flex min-h-10 items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition",
-                  active
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-                  isBusy ? "disabled:cursor-not-allowed disabled:opacity-60" : ""
-                ].join(" ")}
-              >
-                {option.label}
-              </button>
-            );
-          })}
+          <div className="mt-3 flex flex-wrap gap-3">
+            {FEED_SENTIMENT_OPTIONS.map((option) => {
+              const active = filters.sentiment === option.key;
+
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => onSentimentChange(option.key)}
+                  disabled={isBusy}
+                  className={[
+                    "inline-flex min-h-10 items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition",
+                    active
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                    isBusy ? "disabled:cursor-not-allowed disabled:opacity-60" : ""
+                  ].join(" ")}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Place category
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-3">
+            {FEED_CATEGORY_OPTIONS.map((option) => {
+              const active = filters.category === option.key;
+
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => onCategoryChange(option.key)}
+                  disabled={isBusy}
+                  className={[
+                    "inline-flex min-h-10 items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition",
+                    active
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                    isBusy ? "disabled:cursor-not-allowed disabled:opacity-60" : ""
+                  ].join(" ")}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {hasFilters ? (
@@ -329,6 +454,15 @@ function FeedFiltersBar({ filters, isBusy, onSentimentChange, onClearSentiment, 
             {filters.sentiment !== "all" ? (
               <span className="inline-flex items-center rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 ring-1 ring-violet-200">
                 Sentiment: {filters.sentiment}
+              </span>
+            ) : null}
+
+            {filters.category !== "all" ? (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${getPlaceCategoryUi(filters.category).badge}`}
+              >
+                <span aria-hidden="true">{getPlaceCategoryUi(filters.category).icon}</span>
+                <span>Category: {getPlaceCategoryUi(filters.category).label}</span>
               </span>
             ) : null}
           </div>
@@ -384,7 +518,7 @@ function EmptyFeedState({ filters }) {
       </h2>
       <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-600">
         {hasFilters
-          ? "Try clearing the current search or removing the sentiment filter to see more results."
+          ? "Try clearing the current search or removing the current sentiment/category filters to see more results."
           : "There are no public posts from other travelers yet. Check back later or explore the map."}
       </p>
 
@@ -483,6 +617,7 @@ function FeedImageGallery({ post }) {
 function FeedPostCard({ post, aiState, aiRemainingSeconds, onRequestLearnMore, onOpenOnMap }) {
   const sentimentUi = getSentimentUi(post.sentiment);
   const privacyUi = getPrivacyUi(post.privacy);
+  const placeCategoryUi = getPlaceCategoryUi(post.placeCategory);
 
   const aiStatus = aiState?.status || "idle";
   const aiContent = aiState?.content || "";
@@ -520,6 +655,13 @@ function FeedPostCard({ post, aiState, aiRemainingSeconds, onRequestLearnMore, o
           >
             <span aria-hidden="true">{privacyUi.icon}</span>
             <span>{privacyUi.label}</span>
+          </span>
+
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${placeCategoryUi.badge}`}
+          >
+            <span aria-hidden="true">{placeCategoryUi.icon}</span>
+            <span>{placeCategoryUi.label}</span>
           </span>
 
           <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
@@ -651,10 +793,15 @@ function FeedPostCard({ post, aiState, aiRemainingSeconds, onRequestLearnMore, o
 function getFiltersFromSearchParams(searchParams) {
   const q = String(searchParams.get("q") || "").trim();
   const rawSentiment = String(searchParams.get("sentiment") || "").trim().toLowerCase();
+  const rawCategory = String(searchParams.get("category") || "").trim().toLowerCase();
 
   return {
     q,
-    sentiment: ["positive", "neutral", "negative"].includes(rawSentiment) ? rawSentiment : "all"
+    sentiment: ["positive", "neutral", "negative"].includes(rawSentiment) ? rawSentiment : "all",
+    category:
+      FEED_CATEGORY_OPTIONS.some((option) => option.key === rawCategory) && rawCategory !== "all"
+        ? rawCategory
+        : "all"
   };
 }
 
@@ -735,7 +882,12 @@ export default function FeedPage() {
     const reqId = (feedReqIdRef.current += 1);
     const normalizedFilters = {
       q: String(filtersOverride?.q || "").trim(),
-      sentiment: filtersOverride?.sentiment || "all"
+      sentiment: filtersOverride?.sentiment || "all",
+      category:
+        FEED_CATEGORY_OPTIONS.some((option) => option.key === filtersOverride?.category) &&
+        filtersOverride?.category !== "all"
+          ? filtersOverride.category
+          : "all"
     };
 
     lastLoadAttemptRef.current = {
@@ -760,6 +912,9 @@ export default function FeedPage() {
           ...(normalizedFilters.q ? { q: normalizedFilters.q } : {}),
           ...(normalizedFilters.sentiment !== "all"
             ? { sentiment: normalizedFilters.sentiment }
+            : {}),
+          ...(normalizedFilters.category !== "all"
+            ? { category: normalizedFilters.category }
             : {})
         },
         {
@@ -988,6 +1143,32 @@ export default function FeedPage() {
     setSearchParams(params, { replace: false });
   }, [searchParams, setSearchParams]);
 
+  const handleCategoryChange = useCallback(
+    (nextCategory) => {
+      const params = new URLSearchParams(searchParams);
+      const normalizedCategory = String(nextCategory || "all").trim().toLowerCase();
+
+      if (!FEED_CATEGORY_OPTIONS.some((option) => option.key === normalizedCategory)) {
+        return;
+      }
+
+      if (normalizedCategory === "all") {
+        params.delete("category");
+      } else {
+        params.set("category", normalizedCategory);
+      }
+
+      setSearchParams(params, { replace: false });
+    },
+    [searchParams, setSearchParams]
+  );
+
+  const handleClearCategory = useCallback(() => {
+    const params = new URLSearchParams(searchParams);
+    params.delete("category");
+    setSearchParams(params, { replace: false });
+  }, [searchParams, setSearchParams]);
+
   const handleClearSearch = useCallback(() => {
     const params = new URLSearchParams(searchParams);
     params.delete("q");
@@ -1041,7 +1222,9 @@ export default function FeedPage() {
             filters={effectiveFilters}
             isBusy={isInitialLoading || isLoadingMore}
             onSentimentChange={handleSentimentChange}
+            onCategoryChange={handleCategoryChange}
             onClearSentiment={handleClearSentiment}
+            onClearCategory={handleClearCategory}
             onClearSearch={handleClearSearch}
           />
 

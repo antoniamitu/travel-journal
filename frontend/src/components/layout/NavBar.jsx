@@ -66,11 +66,30 @@ function getCurrentFeedSentiment(location) {
   return ["positive", "neutral", "negative"].includes(sentiment) ? sentiment : "";
 }
 
+function getCurrentFeedCategory(location) {
+  const params = new URLSearchParams(location.search);
+  const category = String(params.get("category") || "").trim().toLowerCase();
+
+  return [
+    "historical",
+    "religious",
+    "nature",
+    "entertainment",
+    "food_drink",
+    "shopping",
+    "urban_landmark",
+    "other"
+  ].includes(category)
+    ? category
+    : "";
+}
+
 function buildFeedSearchUrl(query, currentLocation) {
   const params = new URLSearchParams();
 
   const trimmedQuery = String(query || "").trim();
   const currentSentiment = getCurrentFeedSentiment(currentLocation);
+  const currentCategory = getCurrentFeedCategory(currentLocation);
 
   if (trimmedQuery) {
     params.set("q", trimmedQuery);
@@ -78,6 +97,10 @@ function buildFeedSearchUrl(query, currentLocation) {
 
   if (currentSentiment) {
     params.set("sentiment", currentSentiment);
+  }
+
+  if (currentCategory) {
+    params.set("category", currentCategory);
   }
 
   const search = params.toString();
@@ -407,10 +430,12 @@ export default function NavBar() {
 
       try {
         const sentiment = getCurrentFeedSentiment(location);
+        const category = getCurrentFeedCategory(location);
         const feedParams = {
           q: query,
           limit: 1,
-          ...(sentiment ? { sentiment } : {})
+          ...(sentiment ? { sentiment } : {}),
+          ...(category ? { category } : {})
         };
 
         let hasFeedResults = false;

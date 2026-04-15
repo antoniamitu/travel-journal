@@ -120,6 +120,58 @@ function getPrivacyUi(privacy) {
   };
 }
 
+const PLACE_CATEGORY_UI = {
+  historical: {
+    label: "Historical",
+    icon: "🏛️",
+    shell: "bg-stone-100 text-stone-700 ring-stone-200"
+  },
+  religious: {
+    label: "Religious",
+    icon: "🕍",
+    shell: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200"
+  },
+  nature: {
+    label: "Nature",
+    icon: "🌿",
+    shell: "bg-green-50 text-green-700 ring-green-200"
+  },
+  entertainment: {
+    label: "Entertainment",
+    icon: "🎭",
+    shell: "bg-indigo-50 text-indigo-700 ring-indigo-200"
+  },
+  food_drink: {
+    label: "Food & Drink",
+    icon: "🍽️",
+    shell: "bg-orange-50 text-orange-700 ring-orange-200"
+  },
+  shopping: {
+    label: "Shopping",
+    icon: "🛍️",
+    shell: "bg-pink-50 text-pink-700 ring-pink-200"
+  },
+  urban_landmark: {
+    label: "Urban Landmark",
+    icon: "🏙️",
+    shell: "bg-cyan-50 text-cyan-700 ring-cyan-200"
+  },
+  other: {
+    label: "Other",
+    icon: "📍",
+    shell: "bg-slate-100 text-slate-700 ring-slate-200"
+  }
+};
+
+function normalizePlaceCategory(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(PLACE_CATEGORY_UI, normalized) ? normalized : "other";
+}
+
+function getPlaceCategoryUi(category) {
+  return PLACE_CATEGORY_UI[normalizePlaceCategory(category)] || PLACE_CATEGORY_UI.other;
+}
+
 function UserProfileLoadingSkeleton() {
   return (
     <div className="min-h-full bg-slate-100">
@@ -306,6 +358,7 @@ function UserPostCard({ post }) {
   const imageUrl = getPreviewImage(post);
   const sentimentUi = getSentimentUi(post?.sentiment);
   const privacyUi = getPrivacyUi(post?.privacy);
+  const placeCategoryUi = getPlaceCategoryUi(post?.placeCategory);
 
   return (
     <article className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
@@ -340,6 +393,13 @@ function UserPostCard({ post }) {
               className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ring-1 ${privacyUi.shell}`}
             >
               {privacyUi.label}
+            </span>
+
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${placeCategoryUi.shell}`}
+            >
+              <span aria-hidden="true">{placeCategoryUi.icon}</span>
+              <span>{placeCategoryUi.label}</span>
             </span>
 
             <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
