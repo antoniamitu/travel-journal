@@ -11,6 +11,7 @@ const EMPTY_STATS = {
   totalPosts: 0,
   publicPosts: 0,
   privatePosts: 0,
+  averageSentimentScore: null,
   sentimentCounts: EMPTY_SENTIMENT_COUNTS,
   countriesVisited: 0,
   citiesVisited: 0
@@ -19,6 +20,15 @@ const EMPTY_STATS = {
 function asSafeNumber(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function asNullableNumber(value) {
+  if (value == null || value === "") {
+    return null;
+  }
+
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 function normalizeSentimentCounts(value) {
@@ -38,6 +48,7 @@ function normalizeStats(value) {
     totalPosts: asSafeNumber(source.totalPosts, EMPTY_STATS.totalPosts),
     publicPosts: asSafeNumber(source.publicPosts, EMPTY_STATS.publicPosts),
     privatePosts: asSafeNumber(source.privatePosts, EMPTY_STATS.privatePosts),
+    averageSentimentScore: asNullableNumber(source.averageSentimentScore),
     sentimentCounts: normalizeSentimentCounts(source.sentimentCounts),
     countriesVisited: asSafeNumber(source.countriesVisited, EMPTY_STATS.countriesVisited),
     citiesVisited: asSafeNumber(source.citiesVisited, EMPTY_STATS.citiesVisited)
@@ -106,6 +117,7 @@ export async function getUserProfileByUsername(username, params = {}, options = 
 
   return {
     user: data?.user ?? null,
+    stats: normalizeStats(data?.stats),
     posts: normalizeRecentPosts(data?.posts),
     total: asSafeNumber(data?.total, 0)
   };

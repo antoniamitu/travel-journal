@@ -1,6 +1,7 @@
 // frontend/src/components/profile/OwnProfile.jsx
 import React, { useMemo } from "react";
 import { Link } from "react-router-dom";
+import { formatSentimentScore, getSentimentUi } from "../../utils/sentimentUi.js";
 
 function formatMemberSince(value) {
   if (!value) return "Member since —";
@@ -76,25 +77,6 @@ function getPostLocation(post) {
   return post?.locationName || "Unknown location";
 }
 
-function getSentimentUi(sentiment) {
-  switch (sentiment) {
-    case "positive":
-      return {
-        label: "Positive",
-        shell: "bg-emerald-50 text-emerald-700 ring-emerald-200"
-      };
-    case "negative":
-      return {
-        label: "Negative",
-        shell: "bg-rose-50 text-rose-700 ring-rose-200"
-      };
-    default:
-      return {
-        label: "Neutral",
-        shell: "bg-amber-50 text-amber-700 ring-amber-200"
-      };
-  }
-}
 
 const PLACE_CATEGORY_UI = {
   historical: {
@@ -171,6 +153,7 @@ function ProfileStatCard({ label, value, tone = "slate" }) {
 }
 
 function ProfileHero({ user, stats }) {
+  const avgSentimentLabel = formatSentimentScore(stats?.averageSentimentScore);
   const initials = getAvatarInitials(user);
 
   return (
@@ -202,6 +185,9 @@ function ProfileHero({ user, stats }) {
                 </span>
                 <span className="rounded-full bg-white/14 px-3 py-1 backdrop-blur">
                   🏙️ {stats.citiesVisited} cities
+                </span>
+                <span className="rounded-full bg-white/14 px-3 py-1 backdrop-blur">
+                  😊 Avg. sentiment {avgSentimentLabel}
                 </span>
               </div>
             </div>
@@ -296,7 +282,7 @@ function AccountSettingsCard({ onDeleteRequest, deleteDisabled = false }) {
 
 function RecentPostCard({ post }) {
   const imageUrl = getPreviewImage(post);
-  const sentimentUi = getSentimentUi(post?.sentiment);
+  const sentimentUi = getSentimentUi(post?.sentiment, post?.sentimentScore, "profile");
   const placeCategoryUi = getPlaceCategoryUi(post?.placeCategory);
 
   return (
@@ -324,7 +310,7 @@ function RecentPostCard({ post }) {
           <span
             className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ring-1 ${sentimentUi.shell}`}
           >
-            {sentimentUi.label}
+            {sentimentUi.emoji} {sentimentUi.label}
           </span>
 
           <span
@@ -388,6 +374,7 @@ export default function OwnProfile({
       { label: "Private Posts", value: stats.privatePosts, tone: "violet" },
       { label: "Countries Visited", value: stats.countriesVisited, tone: "emerald" },
       { label: "Cities Visited", value: stats.citiesVisited, tone: "sky" },
+      { label: "Avg. Sentiment", value: formatSentimentScore(stats.averageSentimentScore), tone: "amber" },
       { label: "Positive", value: stats.sentimentCounts.positive, tone: "emerald" },
       { label: "Neutral", value: stats.sentimentCounts.neutral, tone: "amber" },
       { label: "Negative", value: stats.sentimentCounts.negative, tone: "rose" }

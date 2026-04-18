@@ -43,33 +43,9 @@ const EMPTY_FORM = {
   osmClass: "",
   osmSubtype: "",
   addressType: "",
-  sentiment: "neutral",
   privacy: "private"
 };
 
-const SENTIMENT_OPTIONS = [
-  {
-    value: "positive",
-    emoji: "😊",
-    label: "Positive",
-    description: "Had a great time, would recommend",
-    selectedClass: "border-emerald-500 bg-emerald-50 text-emerald-700"
-  },
-  {
-    value: "neutral",
-    emoji: "😐",
-    label: "Neutral",
-    description: "It was okay, nothing special",
-    selectedClass: "border-amber-500 bg-amber-50 text-amber-700"
-  },
-  {
-    value: "negative",
-    emoji: "😞",
-    label: "Negative",
-    description: "Disappointing, not worth it",
-    selectedClass: "border-rose-500 bg-rose-50 text-rose-700"
-  }
-];
 
 function isFiniteNumber(value) {
   return typeof value === "number" && Number.isFinite(value);
@@ -131,7 +107,6 @@ function mapPostToForm(post) {
     osmClass: post?.osmClass || "",
     osmSubtype: post?.osmSubtype || "",
     addressType: post?.addressType || "",
-    sentiment: post?.sentiment || "neutral",
     privacy: post?.privacy || "private"
   };
 }
@@ -166,7 +141,6 @@ function buildSnapshot(form, images) {
     osmClass: form.osmClass,
     osmSubtype: form.osmSubtype,
     addressType: form.addressType,
-    sentiment: form.sentiment,
     privacy: form.privacy,
     images: images.map((img) => ({
       source: img.source,
@@ -617,6 +591,7 @@ export default function PostEditorPage() {
   const [pageStatus, setPageStatus] = useState(isEdit ? "loading" : "ready");
   const [form, setForm] = useState(EMPTY_FORM);
   const [images, setImages] = useState([]);
+  const [savedSentiment, setSavedSentiment] = useState("neutral");
   const [fieldErrors, setFieldErrors] = useState({});
   const [locationQuery, setLocationQuery] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -665,6 +640,7 @@ export default function PostEditorPage() {
       clearSelectedPlace();
       setForm(EMPTY_FORM);
       setImages([]);
+      setSavedSentiment("neutral");
       setLocationQuery("");
       setFieldErrors({});
       setReverseStatus("");
@@ -694,10 +670,11 @@ export default function PostEditorPage() {
   const createModeLocked = !isEdit && !hasResolvedLocation;
   const nonLocationControlsDisabled = isSubmitting || createModeLocked;
 
-  const previewTone = useMemo(() => getPreviewTone(form.sentiment), [form.sentiment]);
+  const previewSentiment = isEdit ? savedSentiment : "neutral";
+  const previewTone = useMemo(() => getPreviewTone(previewSentiment), [previewSentiment]);
   const sentimentMarkerIcon = useMemo(
-    () => createSentimentMarkerIcon(form.sentiment),
-    [form.sentiment]
+    () => createSentimentMarkerIcon(previewSentiment),
+    [previewSentiment]
   );
 
   const mapCenter = useMemo(() => {
@@ -1023,6 +1000,7 @@ export default function PostEditorPage() {
 
         setForm(nextForm);
         setImages(nextImages);
+        setSavedSentiment(post?.sentiment || "neutral");
         setLocationQuery(nextForm.locationName || "");
         setFieldErrors({});
         setReverseStatus("");
@@ -1284,7 +1262,6 @@ export default function PostEditorPage() {
         osmClass: form.osmClass?.trim() || "",
         osmSubtype: form.osmSubtype?.trim() || "",
         addressType: form.addressType?.trim() || "",
-        sentiment: form.sentiment,
         privacy: form.privacy,
         images: images.map((item) => ({
           secureUrl: item.secureUrl,
@@ -1628,81 +1605,11 @@ export default function PostEditorPage() {
                       Private posts are visible only to you. Public posts can be seen by other authenticated users.
                     </p>
                   </div>
-
-                  <div className={`mt-6 rounded-2xl border px-4 py-3 ${previewTone.shell}`}>
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <div className="text-sm font-semibold">
-                          Sentiment preview: {previewTone.label}
-                        </div>
-                        <div className="mt-1 text-xs opacity-80">
-                          The map preview pin updates to match your selected sentiment.
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {SENTIMENT_OPTIONS.map((option) => {
-                          const active = form.sentiment === option.value;
-                          return (
-                            <button
-                              key={option.value}
-                              type="button"
-                              disabled={nonLocationControlsDisabled}
-                              onClick={() => {
-                                setForm((prev) => ({ ...prev, sentiment: option.value }));
-                                setFieldErrors((prev) => ({ ...prev, sentiment: "" }));
-                              }}
-                              className={[
-                                "inline-flex h-10 w-10 items-center justify-center rounded-full border text-base transition disabled:cursor-not-allowed disabled:opacity-60",
-                                active
-                                  ? option.selectedClass
-                                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                              ].join(" ")}
-                              aria-label={option.label}
-                              title={option.label}
-                            >
-                              {option.emoji}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                      {SENTIMENT_OPTIONS.map((option) => {
-                        const active = form.sentiment === option.value;
-                        return (
-                          <button
-                            key={option.value}
-                            type="button"
-                            disabled={nonLocationControlsDisabled}
-                            onClick={() => {
-                              setForm((prev) => ({ ...prev, sentiment: option.value }));
-                              setFieldErrors((prev) => ({ ...prev, sentiment: "" }));
-                            }}
-                            className={[
-                              "rounded-2xl border px-3 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60",
-                              active
-                                ? option.selectedClass
-                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                            ].join(" ")}
-                          >
-                            <div className="text-sm font-semibold">
-                              {option.emoji} {option.label}
-                            </div>
-                            <div className="mt-1 text-xs opacity-80">{option.description}</div>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {fieldErrors.sentiment ? (
-                      <p className="mt-3 text-sm text-rose-600">{fieldErrors.sentiment}</p>
-                    ) : null}
-                  </div>
+                  <p className="mt-6 text-sm text-slate-500">
+                    Sentiment is calculated automatically.
+                  </p>
                 </div>
               </div>
-
               <div className="hidden gap-3 pt-2 md:flex md:flex-row md:items-center md:justify-between">
                 <button
                   type="button"

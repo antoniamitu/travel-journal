@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/axios.js";
 import { listFeedPosts } from "../api/posts.js";
 import { useLocationContext } from "../hooks/useLocationContext.js";
+import { getSentimentUi } from "../utils/sentimentUi.js";
 
 const DEFAULT_PAGE_SIZE = 12;
 const AI_COOLDOWN_MS = 60_000;
@@ -109,28 +110,6 @@ function optimizeCloudinaryUrl(secureUrl, variant = "card") {
   return secureUrl.replace("/upload/", `/upload/${transform}/`);
 }
 
-function getSentimentUi(sentiment) {
-  switch (sentiment) {
-    case "positive":
-      return {
-        emoji: "😊",
-        label: "Positive",
-        badge: "bg-emerald-50 text-emerald-700 ring-emerald-200"
-      };
-    case "negative":
-      return {
-        emoji: "😞",
-        label: "Negative",
-        badge: "bg-rose-50 text-rose-700 ring-rose-200"
-      };
-    default:
-      return {
-        emoji: "😐",
-        label: "Neutral",
-        badge: "bg-amber-50 text-amber-700 ring-amber-200"
-      };
-  }
-}
 
 function getPrivacyUi(privacy) {
   if (privacy === "public") {
@@ -615,7 +594,7 @@ function FeedImageGallery({ post }) {
 }
 
 function FeedPostCard({ post, aiState, aiRemainingSeconds, onRequestLearnMore, onOpenOnMap }) {
-  const sentimentUi = getSentimentUi(post.sentiment);
+  const sentimentUi = getSentimentUi(post.sentiment, post.sentimentScore, "feed");
   const privacyUi = getPrivacyUi(post.privacy);
   const placeCategoryUi = getPlaceCategoryUi(post.placeCategory);
 

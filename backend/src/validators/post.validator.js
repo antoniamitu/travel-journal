@@ -1,6 +1,5 @@
 // backend/src/validators/post.validator.js
 import { z } from "zod";
-import { SENTIMENT_VALUES } from "../constants/sentiment.js";
 import { PRIVACY_VALUES } from "../constants/privacy.js";
 import { asNumberOrUndefined } from "./shared.js";
 import {
@@ -120,19 +119,13 @@ const postBodySchema = z
       z.string().max(50, "addressType must be at most 50 characters").optional()
     ),
 
-    sentiment: z
-      .preprocess(trimLowerOrEmpty, z.string())
-      .refine(
-        (v) => SENTIMENT_VALUES.includes(v),
-        "sentiment must be one of: positive, neutral, negative"
-      ),
-
     privacy: z
       .preprocess(trimLowerOrEmpty, z.string())
       .refine((v) => PRIVACY_VALUES.includes(v), "privacy must be one of: private, public"),
 
     images: z.array(imageSchema).max(6, "Maximum 6 images per post").default([])
   })
+  .strict()
   .superRefine((data, ctx) => {
     const ids = data.images.map((x) => x.publicId);
     const set = new Set(ids);

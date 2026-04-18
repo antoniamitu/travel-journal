@@ -5,12 +5,13 @@ import { HttpError } from "../utils/httpError.js";
 import { cleanupUploads } from "../services/cloudinary.service.js";
 import { mapMapFeedRowToApi } from "../mappers/post.mapper.js";
 import { countDistinctNormalizedLocationValues } from "../utils/locationText.js";
+import { SENTIMENT_VALUES } from "../constants/sentiment.js";
 
 const PROFILE_RECENT_LIMIT = 10;
 const PUBLIC_PROFILE_DEFAULT_PAGE = 1;
 const PUBLIC_PROFILE_DEFAULT_LIMIT = 20;
 const PUBLIC_PROFILE_MAX_LIMIT = 50;
-const ALLOWED_SENTIMENTS = new Set(["positive", "neutral", "negative"]);
+const ALLOWED_SENTIMENTS = new Set(SENTIMENT_VALUES);
 
 const ACCOUNT_SEARCH_MIN_QUERY_LENGTH = 3;
 const ACCOUNT_SEARCH_MAX_QUERY_LENGTH = 120;
@@ -34,6 +35,7 @@ const PROFILE_POSTS_SELECT_SQL = Prisma.sql`
     p.latitude,
     p.longitude,
     p.sentiment,
+    p.sentiment_score,
     p.privacy,
     p.created_at,
     COALESCE(img_count.image_count, 0) AS image_count,
@@ -104,6 +106,19 @@ function normalizePreviewImages(value) {
   return [];
 }
 
+function asNullableNumber(value) {
+  if (value == null || value === "") {
+    return null;
+  }
+
+  const n =
+    typeof value === "object" && typeof value.toString === "function"
+      ? Number(value.toString())
+      : Number(value);
+
+  return Number.isFinite(n) ? n : null;
+}
+
 function mapProfileRecentRowToApi(row, viewerUserId) {
   const base = mapMapFeedRowToApi(row);
   const isOwner = row.user_id === viewerUserId;
@@ -145,6 +160,7 @@ function mapProfileStats(statsRow, sentimentRows, locationRows) {
     totalPosts: Number(statsRow?.total_posts || 0),
     publicPosts: Number(statsRow?.public_posts || 0),
     privatePosts: Number(statsRow?.private_posts || 0),
+    averageSentimentScore: asNullableNumber(statsRow?.average_sentiment_score),
     sentimentCounts: buildSentimentCounts(sentimentRows),
     countriesVisited: countDistinctNormalizedLocationValues(rows.map((row) => row.country)),
     citiesVisited: countDistinctNormalizedLocationValues(rows.map((row) => row.city))
@@ -266,7 +282,7 @@ function parseAccountSearchQuery(query) {
   return { q, limit };
 }
 
-function buildPublicProfilePostsWhere(targetUserId, viewerUserId, sentiment) {
+function buildVisiblePostsWhere(targetUserId, viewerUserId, sentiment) {
   const where = {
     user_id: targetUserId,
     ...(targetUserId === viewerUserId ? {} : { privacy: "public" })
@@ -309,7 +325,8 @@ export async function getProfile(req, res) {
         SELECT
           COUNT(*)::int AS total_posts,
           COUNT(*) FILTER (WHERE privacy = 'public')::int AS public_posts,
-          COUNT(*) FILTER (WHERE privacy = 'private')::int AS private_posts
+          COUNT(*) FILTER (WHERE privacy = 'private')::int AS private_posts,
+          ROUND(AVG(sentiment_score), 2) AS average_sentiment_score
         FROM posts
         WHERE user_id = ${userId}
       `
@@ -417,13 +434,14 @@ export async function getUserProfileByUsername(req, res) {
     throw new HttpError(404, "Not found");
   }
 
-  const where = buildPublicProfilePostsWhere(targetUser.id, viewerUserId, sentiment);
+  const filteredWhere = buildVisiblePostsWhere(targetUser.id, viewerUserId, sentiment);
+  const visibleWhere = buildVisiblePostsWhere(targetUser.id, viewerUserId);
   const visibilitySql =
     targetUser.id === viewerUserId ? Prisma.empty : Prisma.sql` AND p.privacy = 'public'`;
   const sentimentSql = sentiment ? Prisma.sql` AND p.sentiment = ${sentiment}` : Prisma.empty;
 
-  const [total, postRows] = await prisma.$transaction([
-    prisma.post.count({ where }),
+  const [total, postRows, statsRows, sentimentRows, locationRows] = await prisma.$transaction([
+    prisma.post.count({ where: filteredWhere }),
     prisma.$queryRaw(
       Prisma.sql`
         ${PROFILE_POSTS_SELECT_SQL}
@@ -434,16 +452,48 @@ export async function getUserProfileByUsername(req, res) {
         LIMIT ${limit}
         OFFSET ${offset}
       `
-    )
+    ),
+    prisma.$queryRaw(
+      Prisma.sql`
+        SELECT
+          COUNT(*)::int AS total_posts,
+          COUNT(*) FILTER (WHERE privacy = 'public')::int AS public_posts,
+          COUNT(*) FILTER (WHERE privacy = 'private')::int AS private_posts,
+          ROUND(AVG(sentiment_score), 2) AS average_sentiment_score
+        FROM posts
+        WHERE user_id = ${targetUser.id}
+        ${targetUser.id === viewerUserId ? Prisma.empty : Prisma.sql` AND privacy = 'public'`}
+      `
+    ),
+    prisma.$queryRaw(
+      Prisma.sql`
+        SELECT
+          sentiment,
+          COUNT(*)::int AS count
+        FROM posts
+        WHERE user_id = ${targetUser.id}
+        ${targetUser.id === viewerUserId ? Prisma.empty : Prisma.sql` AND privacy = 'public'`}
+        GROUP BY sentiment
+      `
+    ),
+    prisma.post.findMany({
+      where: visibleWhere,
+      select: {
+        city: true,
+        country: true
+      }
+    })
   ]);
 
   const posts = (postRows || []).map((row) => mapProfileRecentRowToApi(row, viewerUserId));
+  const stats = mapProfileStats(statsRows?.[0], sentimentRows, locationRows);
 
   return res.status(200).json({
     user: {
       username: targetUser.username,
       createdAt: targetUser.created_at
     },
+    stats,
     posts,
     total
   });

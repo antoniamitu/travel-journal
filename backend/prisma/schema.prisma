@@ -93,6 +93,7 @@ model Post {
   address_type String? @db.VarChar(50)
 
   sentiment  String   @db.VarChar(20)
+  sentiment_score Decimal? @db.Decimal(4, 2)
   privacy    String   @db.VarChar(20)
   created_at DateTime @default(now()) @db.Timestamptz()
   updated_at DateTime @updatedAt @db.Timestamptz()

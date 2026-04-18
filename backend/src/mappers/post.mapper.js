@@ -20,6 +20,19 @@ function normalizePlaceCategory(value) {
   return PLACE_CATEGORY_VALUES.has(normalized) ? normalized : "other";
 }
 
+function normalizeNullableNumber(value) {
+  if (value == null || value === "") {
+    return null;
+  }
+
+  const n =
+    typeof value === "object" && typeof value.toString === "function"
+      ? Number(value.toString())
+      : Number(value);
+
+  return Number.isFinite(n) ? n : null;
+}
+
 export function mapPostToApi(post, viewerUserId) {
   const isOwner = post.user_id === viewerUserId;
 
@@ -35,6 +48,7 @@ export function mapPostToApi(post, viewerUserId) {
     country: post.country,
     placeCategory: normalizePlaceCategory(post.place_category),
     sentiment: post.sentiment,
+    sentimentScore: normalizeNullableNumber(post.sentiment_score),
     privacy: post.privacy,
     createdAt: post.created_at,
     updatedAt: post.updated_at,
@@ -63,6 +77,7 @@ export function mapMapFeedRowToApi(row) {
     latitude: row.latitude,
     longitude: row.longitude,
     sentiment: row.sentiment,
+    sentimentScore: normalizeNullableNumber(row.sentiment_score),
     privacy: row.privacy,
     createdAt: row.created_at,
     imageCount: Number(row.image_count || 0),

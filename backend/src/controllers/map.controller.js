@@ -24,6 +24,7 @@ const MAP_POSTS_SELECT_SQL = Prisma.sql`
     p.latitude,
     p.longitude,
     p.sentiment,
+    p.sentiment_score,
     p.privacy,
     p.created_at,
     COALESCE(img_count.image_count, 0) AS image_count,

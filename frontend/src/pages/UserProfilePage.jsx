@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { getUserProfileByUsername } from "../api/users.js";
 import { useAuth } from "../hooks/useAuth.js";
+import { formatSentimentScore, getSentimentUi } from "../utils/sentimentUi.js";
 
 const DEFAULT_PAGE_SIZE = 20;
 const SENTIMENT_OPTIONS = [
@@ -11,6 +12,16 @@ const SENTIMENT_OPTIONS = [
   { key: "neutral", label: "Neutral" },
   { key: "negative", label: "Negative" }
 ];
+
+const DEFAULT_PROFILE_STATS = {
+  totalPosts: 0,
+  publicPosts: 0,
+  privatePosts: 0,
+  averageSentimentScore: null,
+  sentimentCounts: { positive: 0, neutral: 0, negative: 0 },
+  countriesVisited: 0,
+  citiesVisited: 0
+};
 
 function formatMemberSince(value) {
   if (!value) return "Member since —";
@@ -86,25 +97,6 @@ function getPostLocation(post) {
   return post?.locationName || "Unknown location";
 }
 
-function getSentimentUi(sentiment) {
-  switch (sentiment) {
-    case "positive":
-      return {
-        label: "Positive",
-        shell: "bg-emerald-50 text-emerald-700 ring-emerald-200"
-      };
-    case "negative":
-      return {
-        label: "Negative",
-        shell: "bg-rose-50 text-rose-700 ring-rose-200"
-      };
-    default:
-      return {
-        label: "Neutral",
-        shell: "bg-amber-50 text-amber-700 ring-amber-200"
-      };
-  }
-}
 
 function getPrivacyUi(privacy) {
   if (privacy === "private") {
@@ -262,7 +254,8 @@ function EmptyPostsState({ sentimentFilter }) {
   );
 }
 
-function UserProfileHero({ user, isSelf }) {
+function UserProfileHero({ user, isSelf, stats }) {
+  const avgSentimentLabel = formatSentimentScore(stats?.averageSentimentScore);
   const initials = getAvatarInitials(user);
 
   return (
@@ -281,6 +274,9 @@ function UserProfileHero({ user, isSelf }) {
 
               <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-white/90 lg:text-base">
                 <span>{formatMemberSince(user?.createdAt)}</span>
+                <span className="rounded-full bg-white/14 px-3 py-1 font-semibold backdrop-blur">
+                  😊 Avg. sentiment {avgSentimentLabel}
+                </span>
                 {isSelf ? (
                   <span className="rounded-full bg-white/14 px-3 py-1 font-semibold backdrop-blur">
                     Viewing as owner
@@ -310,6 +306,32 @@ function UserProfileHero({ user, isSelf }) {
             ) : null}
           </div>
         </div>
+      </div>
+    </section>
+  );
+}
+
+
+function ProfileOverviewCards({ stats }) {
+  const cards = [
+    { label: "Visible Posts", value: stats.totalPosts, tone: "text-emerald-700" },
+    { label: "Avg. Sentiment", value: formatSentimentScore(stats.averageSentimentScore), tone: "text-amber-700" },
+    { label: "Positive", value: stats.sentimentCounts.positive, tone: "text-emerald-700" },
+    { label: "Neutral", value: stats.sentimentCounts.neutral, tone: "text-amber-700" },
+    { label: "Negative", value: stats.sentimentCounts.negative, tone: "text-rose-700" },
+    { label: "Countries", value: stats.countriesVisited, tone: "text-sky-700" }
+  ];
+
+  return (
+    <section className="mt-6 rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm lg:p-7">
+      <div className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">Profile overview</div>
+      <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {cards.map((item) => (
+          <div key={item.label} className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{item.label}</div>
+            <div className={`mt-3 text-3xl font-semibold tracking-tight ${item.tone}`}>{item.value}</div>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -356,7 +378,7 @@ function SentimentFilters({ value, onChange }) {
 
 function UserPostCard({ post }) {
   const imageUrl = getPreviewImage(post);
-  const sentimentUi = getSentimentUi(post?.sentiment);
+  const sentimentUi = getSentimentUi(post?.sentiment, post?.sentimentScore, "profile");
   const privacyUi = getPrivacyUi(post?.privacy);
   const placeCategoryUi = getPlaceCategoryUi(post?.placeCategory);
 
@@ -386,7 +408,7 @@ function UserPostCard({ post }) {
             <span
               className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ring-1 ${sentimentUi.shell}`}
             >
-              {sentimentUi.label}
+              {sentimentUi.emoji} {sentimentUi.label}
             </span>
 
             <span
@@ -428,6 +450,7 @@ export default function UserProfilePage() {
   const [status, setStatus] = useState("loading");
   const [profileUser, setProfileUser] = useState(null);
   const [posts, setPosts] = useState([]);
+  const [stats, setStats] = useState(DEFAULT_PROFILE_STATS);
   const [total, setTotal] = useState(0);
   const [sentimentFilter, setSentimentFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
@@ -491,6 +514,7 @@ export default function UserProfilePage() {
         const nextPosts = Array.isArray(data?.posts) ? data.posts : [];
 
         setProfileUser(data?.user ?? null);
+        setStats(data?.stats ?? DEFAULT_PROFILE_STATS);
         setTotal(Number.isFinite(Number(data?.total)) ? Number(data.total) : 0);
         setPosts((prev) => (append ? [...prev, ...nextPosts] : nextPosts));
         setCurrentPage(pageToLoad);
@@ -586,11 +610,13 @@ export default function UserProfilePage() {
   return (
     <div className="min-h-full bg-slate-100">
       <div className="mx-auto max-w-7xl px-4 py-5 lg:px-6 lg:py-6">
-        <UserProfileHero user={profileUser} isSelf={isSelf} />
+        <UserProfileHero user={profileUser} isSelf={isSelf} stats={stats} />
 
         <div className="mt-6">
           <SentimentFilters value={sentimentFilter} onChange={handleFilterChange} />
         </div>
+
+        <ProfileOverviewCards stats={stats} />
 
         <section className="mt-8">
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">

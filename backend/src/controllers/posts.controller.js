@@ -20,6 +20,8 @@ import {
 import { mapNominatimSearchResults } from "../utils/mapNominatim.js";
 import { searchPlaceForEnrichment } from "../services/nominatim.service.js";
 import { canEnqueue, nominatimQueue } from "../services/nominatimQueue.js";
+import analyzeSentiment from "../utils/analyzeSentiment.js";
+import { SENTIMENT_VALUES } from "../constants/sentiment.js";
 
 const fixNegZero = (n) => (Object.is(n, -0) ? 0 : n);
 
@@ -38,6 +40,7 @@ const POST_API_SELECT = {
   osm_subtype: true,
   address_type: true,
   sentiment: true,
+  sentiment_score: true,
   privacy: true,
   created_at: true,
   updated_at: true,
@@ -83,7 +86,7 @@ const MAX_FEED_LIMIT = 24;
 const MAX_FEED_QUERY_LENGTH = 120;
 const DEFAULT_SUGGEST_LIMIT = 5;
 const MAX_SUGGEST_LIMIT = 10;
-const ALLOWED_FEED_SENTIMENTS = new Set(["positive", "neutral", "negative"]);
+const ALLOWED_FEED_SENTIMENTS = new Set(SENTIMENT_VALUES);
 const ALLOWED_FEED_CATEGORIES = new Set(PLACE_CATEGORY_VALUES);
 const DEFAULT_PLACE_CATEGORY = "other";
 const COMBINING_MARKS_RE = /[\u0300-\u036f]/g;
@@ -106,6 +109,7 @@ const FEED_POSTS_SELECT_SQL = Prisma.sql`
     p.latitude,
     p.longitude,
     p.sentiment,
+    p.sentiment_score,
     p.privacy,
     p.created_at,
     COALESCE(img_count.image_count, 0) AS image_count,
@@ -693,6 +697,11 @@ export async function create(req, res) {
     }
   );
 
+  const sentimentAnalysis = analyzeSentiment({
+    title: parsed.data.title,
+    content: parsed.data.content
+  });
+
   try {
     const created = await prisma.post.create({
       data: {
@@ -708,7 +717,8 @@ export async function create(req, res) {
         osm_class: classification.osmClass,
         osm_subtype: classification.osmSubtype,
         address_type: classification.addressType,
-        sentiment: parsed.data.sentiment,
+        sentiment: sentimentAnalysis.label,
+        sentiment_score: sentimentAnalysis.score,
         privacy: parsed.data.privacy,
         ...(images.length > 0
           ? {
@@ -1012,7 +1022,7 @@ export async function update(req, res) {
     addressType: bodyParsed.data.addressType
   };
 
-    const sameLocation = isSameLocationCore(existingPost, incomingLocation);
+  const sameLocation = isSameLocationCore(existingPost, incomingLocation);
 
   const reusableStoredPlaceCategory = sameLocation
     ? getReusableStoredPlaceCategory(existingPost.place_category)
@@ -1043,6 +1053,11 @@ export async function update(req, res) {
     );
   }
 
+  const sentimentAnalysis = analyzeSentiment({
+    title: bodyParsed.data.title,
+    content: bodyParsed.data.content
+  });
+
   const existingByPublicId = new Map(existingPost.images.map((img) => [img.public_id, img]));
   const incomingSet = new Set(images.map((img) => img.publicId));
 
@@ -1069,7 +1084,8 @@ export async function update(req, res) {
           osm_class: classification.osmClass,
           osm_subtype: classification.osmSubtype,
           address_type: classification.addressType,
-          sentiment: bodyParsed.data.sentiment,
+          sentiment: sentimentAnalysis.label,
+          sentiment_score: sentimentAnalysis.score,
           privacy: bodyParsed.data.privacy
         }
       });

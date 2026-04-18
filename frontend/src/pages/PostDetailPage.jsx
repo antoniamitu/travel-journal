@@ -7,6 +7,7 @@ import L from "leaflet";
 
 import { deletePostById, getPostById } from "../api/posts.js";
 import DeletePostDialog from "../components/posts/DeletePostDialog.jsx";
+import { formatSentimentScore, getSentimentUi } from "../utils/sentimentUi.js";
 
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
@@ -53,28 +54,6 @@ function wasEdited(post) {
   return Math.abs(updated - created) > 1000;
 }
 
-function getSentimentUi(sentiment) {
-  switch (sentiment) {
-    case "positive":
-      return {
-        emoji: "😊",
-        label: "Positive experience",
-        badge: "bg-emerald-50 text-emerald-700 ring-emerald-200"
-      };
-    case "negative":
-      return {
-        emoji: "😞",
-        label: "Negative experience",
-        badge: "bg-rose-50 text-rose-700 ring-rose-200"
-      };
-    default:
-      return {
-        emoji: "😐",
-        label: "Neutral experience",
-        badge: "bg-amber-50 text-amber-700 ring-amber-200"
-      };
-  }
-}
 
 function getPrivacyUi(privacy) {
   if (privacy === "public") {
@@ -518,7 +497,10 @@ export default function PostDetailPage() {
     };
   }, [id]);
 
-  const sentimentUi = useMemo(() => getSentimentUi(post?.sentiment), [post?.sentiment]);
+  const sentimentUi = useMemo(
+    () => getSentimentUi(post?.sentiment, post?.sentimentScore, "detail"),
+    [post?.sentiment, post?.sentimentScore]
+  );
   const privacyUi = useMemo(() => getPrivacyUi(post?.privacy), [post?.privacy]);
   const placeCategoryUi = useMemo(() => getPlaceCategoryUi(post?.placeCategory), [post?.placeCategory]);
 
@@ -592,6 +574,12 @@ export default function PostDetailPage() {
                     <span aria-hidden="true">{sentimentUi.emoji}</span>
                     <span>{sentimentUi.label}</span>
                   </span>
+
+                  {post?.sentimentScore != null ? (
+                    <span className="inline-flex min-h-9 items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                      Score: {formatSentimentScore(post.sentimentScore)}
+                    </span>
+                  ) : null}
 
                   <span
                     className={`inline-flex min-h-9 items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${placeCategoryUi.badge}`}

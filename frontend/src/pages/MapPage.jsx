@@ -19,6 +19,7 @@ import { api } from "../api/axios.js";
 import { getPostById } from "../api/posts.js";
 import { useDebouncedValue } from "../hooks/useDebouncedValue.js";
 import { useLocationContext } from "../hooks/useLocationContext.js";
+import { formatSentimentScore, getSentimentUi } from "../utils/sentimentUi.js";
 
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
@@ -277,31 +278,6 @@ function getAiLocationLabel(post, details) {
   return details?.locationName || post?.locationName || "this location";
 }
 
-function getSentimentUi(sentiment) {
-  switch (sentiment) {
-    case "positive":
-      return {
-        emoji: "😊",
-        label: "Positive",
-        color: "#10B981",
-        badge: "bg-emerald-50 text-emerald-700 ring-emerald-200"
-      };
-    case "negative":
-      return {
-        emoji: "😞",
-        label: "Negative",
-        color: "#EF4444",
-        badge: "bg-rose-50 text-rose-700 ring-rose-200"
-      };
-    default:
-      return {
-        emoji: "😐",
-        label: "Neutral",
-        color: "#F59E0B",
-        badge: "bg-amber-50 text-amber-700 ring-amber-200"
-      };
-  }
-}
 
 const PLACE_CATEGORY_UI = {
   historical: {
@@ -739,7 +715,10 @@ function MapPostPanel({
   onRequestLearnMore
 }) {
   const hasPost = Boolean(post);
-  const sentimentUi = hasPost ? getSentimentUi(post.sentiment) : getSentimentUi("neutral");
+  const sentimentScore = details?.sentimentScore ?? post?.sentimentScore ?? null;
+  const sentimentUi = hasPost
+    ? getSentimentUi(post.sentiment, sentimentScore, "map")
+    : getSentimentUi("neutral", null, "map");
   const placeCategoryUi = getPlaceCategoryUi(details?.placeCategory || post?.placeCategory);
   const detailImages = Array.isArray(details?.images) ? details.images : [];
 
@@ -848,6 +827,12 @@ function MapPostPanel({
             <span aria-hidden="true">{sentimentUi.emoji}</span>
             <span>{sentimentUi.label}</span>
           </span>
+
+          {sentimentScore != null ? (
+            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+              Score: {formatSentimentScore(sentimentScore)}
+            </span>
+          ) : null}
 
           <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
             {post.privacy === "public" ? "🌍 Public" : "🔒 Private"}
