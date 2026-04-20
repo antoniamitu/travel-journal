@@ -45,6 +45,15 @@ datasource db {
 }
 
 // ============================================================
+// ENUMS
+// ============================================================
+enum PhotoVerificationStatus {
+  match
+  uncertain
+  mismatch
+}
+
+// ============================================================
 // 1. USERS (PRD 1 — Authentication)
 // ============================================================
 model User {
@@ -95,6 +104,17 @@ model Post {
   sentiment  String   @db.VarChar(20)
   sentiment_score Decimal? @db.Decimal(4, 2)
   privacy    String   @db.VarChar(20)
+
+  // Photo-location verification metadata
+  // Null status means verification was skipped / did not run.
+  photo_verification_status          PhotoVerificationStatus?
+  photo_verification_checked_at      DateTime?                @db.Timestamptz()
+  photo_verification_confidence      Float?                   @db.DoublePrecision
+  photo_verification_distance_meters Int?
+  photo_verification_detected_name   String?                  @db.VarChar(255)
+  photo_verification_reasons         Json?                    @db.JsonB
+  photo_verification_provider        String?                  @db.VarChar(50)
+
   created_at DateTime @default(now()) @db.Timestamptz()
   updated_at DateTime @updatedAt @db.Timestamptz()
 
@@ -114,6 +134,7 @@ model Post {
   @@index([user_id])
   @@index([created_at])
   @@index([place_category])
+  @@index([photo_verification_status])
   @@map("posts")
 }
 

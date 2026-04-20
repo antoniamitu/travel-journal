@@ -32,6 +32,17 @@ const normalizeOptionalTrimmed = (v) => {
   return s || undefined;
 };
 
+const normalizeBoolean = (v) => {
+  if (typeof v === "boolean") return v;
+  if (typeof v !== "string") return v;
+
+  const s = v.trim().toLowerCase();
+  if (s === "true") return true;
+  if (s === "false") return false;
+
+  return v;
+};
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
@@ -144,7 +155,41 @@ const envSchema = z
       .int("AI_RETRY_BASE_DELAY_MS must be an integer")
       .min(0, "AI_RETRY_BASE_DELAY_MS must be at least 0 ms")
       .max(10_000, "AI_RETRY_BASE_DELAY_MS must be at most 10000 ms")
-      .default(500)
+      .default(500),
+
+    // PRD #6 — Photo–Location Verification
+    PHOTO_LOCATION_VERIFICATION_ENABLED: z.preprocess(
+      normalizeBoolean,
+      z.boolean().default(false)
+    ),
+
+    GOOGLE_VISION_API_KEY: z.string().optional().transform(normalizeOptionalTrimmed),
+
+    VISION_MIN_SCORE: z.coerce
+      .number()
+      .min(0, "VISION_MIN_SCORE must be between 0 and 1")
+      .max(1, "VISION_MIN_SCORE must be between 0 and 1")
+      .default(0.75),
+
+    VISION_STRONG_SCORE: z.coerce
+      .number()
+      .min(0, "VISION_STRONG_SCORE must be between 0 and 1")
+      .max(1, "VISION_STRONG_SCORE must be between 0 and 1")
+      .default(0.88),
+
+    LANDMARK_MATCH_MAX_DISTANCE_METERS: z.coerce
+      .number()
+      .int("LANDMARK_MATCH_MAX_DISTANCE_METERS must be an integer")
+      .min(1, "LANDMARK_MATCH_MAX_DISTANCE_METERS must be at least 1")
+      .max(50_000, "LANDMARK_MATCH_MAX_DISTANCE_METERS must be at most 50000")
+      .default(2500),
+
+    LANDMARK_MISMATCH_MIN_DISTANCE_METERS: z.coerce
+      .number()
+      .int("LANDMARK_MISMATCH_MIN_DISTANCE_METERS must be an integer")
+      .min(1, "LANDMARK_MISMATCH_MIN_DISTANCE_METERS must be at least 1")
+      .max(200_000, "LANDMARK_MISMATCH_MIN_DISTANCE_METERS must be at most 200000")
+      .default(5000)
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === "development" && !env.FRONTEND_URL_DEV) {
@@ -177,6 +222,35 @@ const envSchema = z
         path: ["AI_LEARN_MORE_GLOBAL_MAX_PER_WINDOW"],
         message:
           "AI_LEARN_MORE_GLOBAL_MAX_PER_WINDOW should be greater than or equal to AI_LEARN_MORE_MAX_PER_WINDOW"
+      });
+    }
+
+    if (env.PHOTO_LOCATION_VERIFICATION_ENABLED && !env.GOOGLE_VISION_API_KEY) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["GOOGLE_VISION_API_KEY"],
+        message:
+          "GOOGLE_VISION_API_KEY is required when PHOTO_LOCATION_VERIFICATION_ENABLED is true"
+      });
+    }
+
+    if (env.VISION_STRONG_SCORE < env.VISION_MIN_SCORE) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["VISION_STRONG_SCORE"],
+        message: "VISION_STRONG_SCORE must be greater than or equal to VISION_MIN_SCORE"
+      });
+    }
+
+    if (
+      env.LANDMARK_MISMATCH_MIN_DISTANCE_METERS <
+      env.LANDMARK_MATCH_MAX_DISTANCE_METERS
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["LANDMARK_MISMATCH_MIN_DISTANCE_METERS"],
+        message:
+          "LANDMARK_MISMATCH_MIN_DISTANCE_METERS must be greater than or equal to LANDMARK_MATCH_MAX_DISTANCE_METERS"
       });
     }
   });

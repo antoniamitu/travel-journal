@@ -11,6 +11,8 @@ const PLACE_CATEGORY_VALUES = new Set([
   "other"
 ]);
 
+const PHOTO_VERIFICATION_STATUS_VALUES = new Set(["match", "uncertain", "mismatch"]);
+
 function normalizePlaceCategory(value) {
   if (typeof value !== "string") {
     return "other";
@@ -20,9 +22,28 @@ function normalizePlaceCategory(value) {
   return PLACE_CATEGORY_VALUES.has(normalized) ? normalized : "other";
 }
 
+function normalizePhotoVerificationStatus(value) {
+  if (value == null || typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return PHOTO_VERIFICATION_STATUS_VALUES.has(normalized) ? normalized : null;
+}
+
 function normalizeNullableNumber(value) {
   if (value == null || value === "") {
     return null;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") {
+      return null;
+    }
+
+    const n = Number(trimmed);
+    return Number.isFinite(n) ? n : null;
   }
 
   const n =
@@ -33,8 +54,37 @@ function normalizeNullableNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function normalizeStringArray(value) {
+  if (Array.isArray(value)) {
+    return value.filter((item) => typeof item === "string" && item.trim() !== "");
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed)
+        ? parsed.filter((item) => typeof item === "string" && item.trim() !== "")
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function normalizeOptionalText(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
 export function mapPostToApi(post, viewerUserId) {
   const isOwner = post.user_id === viewerUserId;
+  const photoVerificationStatus = normalizePhotoVerificationStatus(post.photo_verification_status);
 
   return {
     id: post.id,
@@ -50,6 +100,15 @@ export function mapPostToApi(post, viewerUserId) {
     sentiment: post.sentiment,
     sentimentScore: normalizeNullableNumber(post.sentiment_score),
     privacy: post.privacy,
+    photoVerification: {
+      status: photoVerificationStatus,
+      checkedAt: post.photo_verification_checked_at ?? null,
+      confidence: normalizeNullableNumber(post.photo_verification_confidence),
+      distanceMeters: normalizeNullableNumber(post.photo_verification_distance_meters),
+      detectedName: normalizeOptionalText(post.photo_verification_detected_name),
+      reasons: normalizeStringArray(post.photo_verification_reasons),
+      provider: normalizeOptionalText(post.photo_verification_provider)
+    },
     createdAt: post.created_at,
     updatedAt: post.updated_at,
     isOwner,

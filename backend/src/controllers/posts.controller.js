@@ -10,6 +10,10 @@ import {
   updatePostSchema
 } from "../validators/post.validator.js";
 import { cleanupUploads, getUploadFolderForUser } from "../services/cloudinary.service.js";
+import {
+  verifyPhotoLocationForPost,
+  toPhotoVerificationPersistenceFields
+} from "../services/photoLocationVerification.service.js";
 import { mapMapFeedRowToApi, mapPostToApi } from "../mappers/post.mapper.js";
 import {
   classifyPlaceCategory,
@@ -42,6 +46,13 @@ const POST_API_SELECT = {
   sentiment: true,
   sentiment_score: true,
   privacy: true,
+  photo_verification_status: true,
+  photo_verification_checked_at: true,
+  photo_verification_confidence: true,
+  photo_verification_distance_meters: true,
+  photo_verification_detected_name: true,
+  photo_verification_reasons: true,
+  photo_verification_provider: true,
   created_at: true,
   updated_at: true,
   images: {
@@ -471,6 +482,36 @@ function buildLocationClassificationInput(incomingLocation, existingPost = null)
   };
 }
 
+function buildPhotoVerificationInput(location, images) {
+  return {
+    latitude: location.latitude,
+    longitude: location.longitude,
+    locationName: location.locationName,
+    city: location.city,
+    country: location.country,
+    displayName: location.displayName,
+    osmClass: location.osmClass,
+    osmSubtype: location.osmSubtype,
+    addressType: location.addressType,
+    images
+  };
+}
+
+function sendPhotoLocationMismatch(res, result) {
+  return res.status(422).json({
+    ok: false,
+    code: "PHOTO_LOCATION_MISMATCH",
+    message: "Fotografia pare să corespundă unei alte locații decât cea selectată.",
+    verification: {
+      status: "mismatch",
+      detectedLandmark: result.detectedName,
+      confidence: result.confidence,
+      distanceMeters: result.distanceMeters,
+      reasons: Array.isArray(result.reasons) ? result.reasons : []
+    }
+  });
+}
+
 async function resolvePlaceClassification(input, { logContext = {} } = {}) {
   const baseInput = {
     locationName: input.locationName,
@@ -679,16 +720,20 @@ export async function create(req, res) {
 
   await validateIncomingImagesForUser(userId, images);
 
-  const classification = await resolvePlaceClassification(
-    {
-      locationName: parsed.data.locationName,
-      city: parsed.data.city,
-      country: parsed.data.country,
-      displayName: parsed.data.displayName,
-      osmClass: parsed.data.osmClass,
-      osmSubtype: parsed.data.osmSubtype,
-      addressType: parsed.data.addressType
-    },
+  const incomingLocation = {
+    latitude,
+    longitude,
+    locationName: parsed.data.locationName,
+    city: parsed.data.city,
+    country: parsed.data.country,
+    displayName: parsed.data.displayName,
+    osmClass: parsed.data.osmClass,
+    osmSubtype: parsed.data.osmSubtype,
+    addressType: parsed.data.addressType
+  };
+
+  const photoVerification = await verifyPhotoLocationForPost(
+    buildPhotoVerificationInput(incomingLocation, images),
     {
       logContext: {
         operation: "create",
@@ -696,6 +741,20 @@ export async function create(req, res) {
       }
     }
   );
+
+  // Intentionally do NOT cleanup draft uploads on photo-location mismatch here.
+  // The user may want to correct the selected location and retry with the same
+  // already-uploaded images. Draft/orphan cleanup is handled elsewhere.
+  if (photoVerification.status === "mismatch") {
+    return sendPhotoLocationMismatch(res, photoVerification);
+  }
+
+  const classification = await resolvePlaceClassification(incomingLocation, {
+    logContext: {
+      operation: "create",
+      userId
+    }
+  });
 
   const sentimentAnalysis = analyzeSentiment({
     title: parsed.data.title,
@@ -720,6 +779,7 @@ export async function create(req, res) {
         sentiment: sentimentAnalysis.label,
         sentiment_score: sentimentAnalysis.score,
         privacy: parsed.data.privacy,
+        ...toPhotoVerificationPersistenceFields(photoVerification),
         ...(images.length > 0
           ? {
               images: {
@@ -1022,6 +1082,24 @@ export async function update(req, res) {
     addressType: bodyParsed.data.addressType
   };
 
+  const photoVerification = await verifyPhotoLocationForPost(
+    buildPhotoVerificationInput(incomingLocation, images),
+    {
+      logContext: {
+        operation: "update",
+        userId,
+        postId
+      }
+    }
+  );
+
+  // Intentionally do NOT cleanup draft uploads on photo-location mismatch here.
+  // The user may want to correct the selected location and retry with the same
+  // already-uploaded images. Draft/orphan cleanup is handled elsewhere.
+  if (photoVerification.status === "mismatch") {
+    return sendPhotoLocationMismatch(res, photoVerification);
+  }
+
   const sameLocation = isSameLocationCore(existingPost, incomingLocation);
 
   const reusableStoredPlaceCategory = sameLocation
@@ -1086,7 +1164,8 @@ export async function update(req, res) {
           address_type: classification.addressType,
           sentiment: sentimentAnalysis.label,
           sentiment_score: sentimentAnalysis.score,
-          privacy: bodyParsed.data.privacy
+          privacy: bodyParsed.data.privacy,
+          ...toPhotoVerificationPersistenceFields(photoVerification)
         }
       });
 
