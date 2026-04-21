@@ -466,19 +466,67 @@ function isSameLocationCore(existingPost, incomingLocation) {
   );
 }
 
-function buildLocationClassificationInput(incomingLocation, existingPost = null) {
-  const sameLocation = existingPost ? isSameLocationCore(existingPost, incomingLocation) : false;
+function getStoredLocationMetadataFallback(existingPost, sameLocation) {
+  if (!existingPost || !sameLocation) {
+    return {
+      osmClass: null,
+      osmSubtype: null,
+      addressType: null
+    };
+  }
+
+  return {
+    osmClass: normalizeOptionalText(existingPost.osm_class),
+    osmSubtype: normalizeOptionalText(existingPost.osm_subtype),
+    addressType: normalizeOptionalText(existingPost.address_type)
+  };
+}
+
+function buildLocationClassificationInput(incomingLocation, existingPost = null, sameLocation = null) {
+  const resolvedSameLocation =
+    typeof sameLocation === "boolean"
+      ? sameLocation
+      : existingPost
+        ? isSameLocationCore(existingPost, incomingLocation)
+        : false;
+
+  const storedFallback = getStoredLocationMetadataFallback(existingPost, resolvedSameLocation);
 
   return {
     locationName: incomingLocation.locationName,
     city: incomingLocation.city ?? null,
     country: incomingLocation.country ?? null,
     displayName: incomingLocation.displayName ?? null,
-    osmClass: incomingLocation.osmClass ?? (sameLocation ? existingPost?.osm_class ?? null : null),
-    osmSubtype:
-      incomingLocation.osmSubtype ?? (sameLocation ? existingPost?.osm_subtype ?? null : null),
-    addressType:
-      incomingLocation.addressType ?? (sameLocation ? existingPost?.address_type ?? null : null)
+    osmClass: incomingLocation.osmClass ?? storedFallback.osmClass,
+    osmSubtype: incomingLocation.osmSubtype ?? storedFallback.osmSubtype,
+    addressType: incomingLocation.addressType ?? storedFallback.addressType
+  };
+}
+
+function buildPhotoVerificationLocationInput(
+  incomingLocation,
+  existingPost = null,
+  sameLocation = null
+) {
+  const resolvedSameLocation =
+    typeof sameLocation === "boolean"
+      ? sameLocation
+      : existingPost
+        ? isSameLocationCore(existingPost, incomingLocation)
+        : false;
+
+  const storedFallback = getStoredLocationMetadataFallback(existingPost, resolvedSameLocation);
+
+  return {
+    latitude: incomingLocation.latitude,
+    longitude: incomingLocation.longitude,
+    locationName: incomingLocation.locationName,
+    city: incomingLocation.city ?? null,
+    country: incomingLocation.country ?? null,
+    displayName: incomingLocation.displayName ?? null,
+    osmClass: incomingLocation.osmClass ?? storedFallback.osmClass,
+    osmSubtype: incomingLocation.osmSubtype ?? storedFallback.osmSubtype,
+    addressType: incomingLocation.addressType ?? storedFallback.addressType
   };
 }
 
@@ -732,8 +780,10 @@ export async function create(req, res) {
     addressType: parsed.data.addressType
   };
 
+  const verificationLocation = buildPhotoVerificationLocationInput(incomingLocation);
+
   const photoVerification = await verifyPhotoLocationForPost(
-    buildPhotoVerificationInput(incomingLocation, images),
+    buildPhotoVerificationInput(verificationLocation, images),
     {
       logContext: {
         operation: "create",
@@ -749,12 +799,15 @@ export async function create(req, res) {
     return sendPhotoLocationMismatch(res, photoVerification);
   }
 
-  const classification = await resolvePlaceClassification(incomingLocation, {
-    logContext: {
-      operation: "create",
-      userId
+  const classification = await resolvePlaceClassification(
+    buildLocationClassificationInput(incomingLocation),
+    {
+      logContext: {
+        operation: "create",
+        userId
+      }
     }
-  });
+  );
 
   const sentimentAnalysis = analyzeSentiment({
     title: parsed.data.title,
@@ -1082,8 +1135,16 @@ export async function update(req, res) {
     addressType: bodyParsed.data.addressType
   };
 
+  const sameLocation = isSameLocationCore(existingPost, incomingLocation);
+
+  const verificationLocation = buildPhotoVerificationLocationInput(
+    incomingLocation,
+    existingPost,
+    sameLocation
+  );
+
   const photoVerification = await verifyPhotoLocationForPost(
-    buildPhotoVerificationInput(incomingLocation, images),
+    buildPhotoVerificationInput(verificationLocation, images),
     {
       logContext: {
         operation: "update",
@@ -1099,8 +1160,6 @@ export async function update(req, res) {
   if (photoVerification.status === "mismatch") {
     return sendPhotoLocationMismatch(res, photoVerification);
   }
-
-  const sameLocation = isSameLocationCore(existingPost, incomingLocation);
 
   const reusableStoredPlaceCategory = sameLocation
     ? getReusableStoredPlaceCategory(existingPost.place_category)
@@ -1120,7 +1179,7 @@ export async function update(req, res) {
     };
   } else {
     classification = await resolvePlaceClassification(
-      buildLocationClassificationInput(incomingLocation, existingPost),
+      buildLocationClassificationInput(incomingLocation, existingPost, sameLocation),
       {
         logContext: {
           operation: "update",

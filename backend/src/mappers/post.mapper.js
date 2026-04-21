@@ -1,5 +1,4 @@
 // backend/src/mappers/post.mapper.js
-
 const PLACE_CATEGORY_VALUES = new Set([
   "historical",
   "religious",
@@ -97,6 +96,9 @@ export function mapPostToApi(post, viewerUserId) {
     city: post.city,
     country: post.country,
     placeCategory: normalizePlaceCategory(post.place_category),
+    osmClass: normalizeOptionalText(post.osm_class),
+    osmSubtype: normalizeOptionalText(post.osm_subtype),
+    addressType: normalizeOptionalText(post.address_type),
     sentiment: post.sentiment,
     sentimentScore: normalizeNullableNumber(post.sentiment_score),
     privacy: post.privacy,
