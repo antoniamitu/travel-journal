@@ -17,7 +17,7 @@ function shouldRetryNominatimError(err) {
 }
 
 function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function devLogNon2xx(status, data) {
@@ -35,7 +35,6 @@ function devLogNon2xx(status, data) {
 }
 
 async function nominatimGet(path, params) {
-  // Extra safety: should already be guaranteed by env validation
   if (!ENV.NOMINATIM_USER_AGENT || !ENV.NOMINATIM_USER_AGENT.trim()) {
     throw new HttpError(500, "Server misconfiguration: NOMINATIM_USER_AGENT is missing");
   }
@@ -60,21 +59,17 @@ async function nominatimGet(path, params) {
     devLogNon2xx(status, res.data);
 
     if (isUpstreamUnavailable(status)) {
-      // Preserve real upstream status (503 or 504)
       throw new HttpError(status, "Geocoding service unavailable");
     }
 
-    // Any other upstream HTTP error (403/429/400/500 etc.)
     throw new HttpError(502, "Geocoding upstream error");
   } catch (err) {
     if (err instanceof HttpError) throw err;
 
-    // Timeout
     if (err?.code === "ECONNABORTED") {
       throw new HttpError(504, "Geocoding timed out");
     }
 
-    // DNS / network / unexpected
     throw new HttpError(502, "Geocoding network error");
   }
 }
@@ -92,10 +87,21 @@ async function getWithSingleRetry(path, params) {
   }
 }
 
-function buildEnrichmentQuery(locationName, city) {
-  const parts = [locationName, city]
-    .map((value) => (typeof value === "string" ? value.trim() : ""))
-    .filter(Boolean);
+function normalizePositiveInt(value, fallback) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function buildEnrichmentQuery(locationName, city, queryOverride = null) {
+  const baseLabel =
+    typeof queryOverride === "string" && queryOverride.trim()
+      ? queryOverride.trim()
+      : typeof locationName === "string"
+        ? locationName.trim()
+        : "";
+
+  const safeCity = typeof city === "string" ? city.trim() : "";
+  const parts = [baseLabel, safeCity].filter(Boolean);
 
   if (parts.length === 0) {
     return null;
@@ -123,18 +129,23 @@ export async function reverseGeocode(lat, lng) {
   });
 }
 
-// Dedicated helper for place-category enrichment.
-// Query format: locationName + city, limit=1.
-export async function searchPlaceForEnrichment(locationName, city) {
-  const query = buildEnrichmentQuery(locationName, city);
+export async function searchPlacesForEnrichment(locationName, city, options = {}) {
+  const query = buildEnrichmentQuery(locationName, city, options?.queryOverride ?? null);
   if (!query) {
     return [];
   }
+
+  const limit = normalizePositiveInt(options?.limit, 5);
 
   return await getWithSingleRetry("/search", {
     q: query,
     format: "json",
     addressdetails: 1,
-    limit: 1
+    limit
   });
+}
+
+// Existing helper kept for current classification flow.
+export async function searchPlaceForEnrichment(locationName, city) {
+  return await searchPlacesForEnrichment(locationName, city, { limit: 1 });
 }

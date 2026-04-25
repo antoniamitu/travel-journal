@@ -121,6 +121,44 @@ function getPlaceCategoryUi(category) {
   return PLACE_CATEGORY_UI[normalizePlaceCategory(category)] || PLACE_CATEGORY_UI.other;
 }
 
+function normalizeVerificationConfidence(value) {
+  if (!Number.isFinite(value)) return null;
+
+  const normalized = value >= 0 && value <= 1 ? value * 100 : value;
+  return Math.round(normalized);
+}
+
+
+function getPhotoVerificationUi(photoVerification) {
+  if (!photoVerification || !photoVerification.status || photoVerification.status === "skipped") {
+    return null;
+  }
+
+  const confidence = normalizeVerificationConfidence(photoVerification.confidence);
+
+  if (photoVerification.status === "match") {
+    return {
+      type: "match",
+      label:
+        confidence != null
+          ? `Photo verified for this location • ${confidence}% confidence`
+          : "Photo verified for this location"
+    };
+  }
+
+  if (photoVerification.status === "uncertain") {
+    return {
+      type: "uncertain",
+      label:
+        confidence != null
+          ? `Photo check inconclusive • ${confidence}% confidence`
+          : "Photo check inconclusive"
+    };
+  }
+
+  return null;
+}
+
 function isCloudinaryUrl(url) {
   return typeof url === "string" && url.includes(CLOUDINARY_UPLOAD_SEGMENT);
 }
@@ -205,6 +243,19 @@ function getThumbSizes(imageCount) {
 
 function getLightboxSizes() {
   return "100vw";
+}
+
+function getStorySectionTitle(post) {
+  if (post?.isOwner) {
+    return "Your story";
+  }
+
+  const username = String(post?.username || "").trim();
+  if (!username) {
+    return "Traveler story";
+  }
+
+  return `${username}'s story`;
 }
 
 function EmptyStateCard({ title, message }) {
@@ -502,7 +553,14 @@ export default function PostDetailPage() {
     [post?.sentiment, post?.sentimentScore]
   );
   const privacyUi = useMemo(() => getPrivacyUi(post?.privacy), [post?.privacy]);
-  const placeCategoryUi = useMemo(() => getPlaceCategoryUi(post?.placeCategory), [post?.placeCategory]);
+  const placeCategoryUi = useMemo(
+    () => getPlaceCategoryUi(post?.placeCategory),
+    [post?.placeCategory]
+  );
+  const photoVerificationUi = useMemo(
+    () => getPhotoVerificationUi(post?.photoVerification),
+    [post?.photoVerification]
+  );
 
   async function handleDelete() {
     if (!post?.id || isDeleting) return;
@@ -555,6 +613,7 @@ export default function PostDetailPage() {
 
   const images = Array.isArray(post?.images) ? post.images.filter((img) => img?.secureUrl) : [];
   const hasImages = images.length > 0;
+  const storySectionTitle = getStorySectionTitle(post);
 
   return (
     <>
@@ -631,7 +690,7 @@ export default function PostDetailPage() {
 
           <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
             <section className="min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 lg:p-8">
-              <h2 className="text-lg font-semibold text-slate-900">Your story</h2>
+              <h2 className="text-lg font-semibold text-slate-900">{storySectionTitle}</h2>
 
               <div className="mt-4 min-w-0 break-words whitespace-pre-line text-[15px] leading-7 text-slate-700">
                 {post.content}
@@ -670,7 +729,7 @@ export default function PostDetailPage() {
             </section>
 
             <aside className="min-w-0 space-y-6">
-              <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+              <section className="relative z-0 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
                 <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
                   <div className="text-base font-semibold text-slate-900">Location</div>
                   <div className="mt-1 break-words text-sm text-slate-500">
@@ -679,17 +738,27 @@ export default function PostDetailPage() {
                       : post.locationName}
                   </div>
 
-                  <div className="mt-3">
-                    <span
-                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${placeCategoryUi.badge}`}
-                    >
-                      <span aria-hidden="true">{placeCategoryUi.icon}</span>
-                      <span>{placeCategoryUi.label}</span>
-                    </span>
-                  </div>
+                    <div className="mt-3 space-y-3">
+                      <span
+                        className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${placeCategoryUi.badge}`}
+                      >
+                        <span aria-hidden="true">{placeCategoryUi.icon}</span>
+                        <span>{placeCategoryUi.label}</span>
+                      </span>
+
+                      {photoVerificationUi?.type === "match" ? (
+                          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                            <span className="font-medium">✅ {photoVerificationUi.label}</span>
+                          </div>
+                        ) : post?.isOwner && photoVerificationUi?.type === "uncertain" ? (
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                            <div className="font-medium text-slate-700">{photoVerificationUi.label}</div>
+                          </div>
+                        ) : null}
+                    </div>
                 </div>
 
-                <div className="h-[300px] sm:h-[320px]">
+                <div className="relative z-0 h-[300px] overflow-hidden sm:h-[320px]">
                   <MapContainer
                     center={[post.latitude, post.longitude]}
                     zoom={13}

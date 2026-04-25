@@ -1,5 +1,4 @@
 // backend/src/services/photoLocationVerification.service.js
-
 import { ENV } from "../config/env.js";
 import { calculateHaversineDistanceMeters, hasValidLatLng } from "../utils/geoDistance.js";
 import { getPhotoLocationEligibility } from "../utils/photoLocationEligibility.js";
@@ -8,6 +7,14 @@ import {
   DEFAULT_PHOTO_VERIFICATION_PROVIDER
 } from "../utils/photoLocationVerificationPolicy.js";
 import { detectLandmarkFromImageUrl } from "./visionLandmark.service.js";
+
+const DEBUG_PREFIX = "[DEBUG photo-verification]";
+const IS_DEBUG_LOGGING_ENABLED = ENV.NODE_ENV !== "production";
+
+function debugLog(label, payload) {
+  if (!IS_DEBUG_LOGGING_ENABLED) return;
+  console.log(`${DEBUG_PREFIX} ${label}:`, payload);
+}
 
 function normalizeOptionalText(value) {
   if (typeof value !== "string") {
@@ -47,9 +54,12 @@ function uniqueStrings(values) {
 
   for (const value of values || []) {
     if (typeof value !== "string") continue;
-    if (seen.has(value)) continue;
-    seen.add(value);
-    out.push(value);
+
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+
+    seen.add(trimmed);
+    out.push(trimmed);
   }
 
   return out;
@@ -121,6 +131,131 @@ function buildSkippedResult(reason, selectedLocation) {
   };
 }
 
+function normalizeCandidate(candidate) {
+  if (!candidate || typeof candidate !== "object") {
+    return null;
+  }
+
+  const normalized = {
+    name: normalizeOptionalText(candidate.name),
+    score: toFiniteNumberOrNull(candidate.score),
+    lat: toFiniteNumberOrNull(candidate.lat),
+    lng: toFiniteNumberOrNull(candidate.lng)
+  };
+
+  const hasAnySignal =
+    normalized.name !== null ||
+    normalized.score !== null ||
+    normalized.lat !== null ||
+    normalized.lng !== null;
+
+  return hasAnySignal ? normalized : null;
+}
+
+function extractLandmarkCandidates(detection) {
+  if (!Array.isArray(detection?.candidates)) {
+    return [];
+  }
+
+  return detection.candidates.map(normalizeCandidate).filter(Boolean);
+}
+
+function buildCandidateEvaluation(selectedLocation, eligibility, candidate, provider) {
+  const distanceMeters =
+    hasValidLatLng(selectedLocation.lat, selectedLocation.lng) &&
+    hasValidLatLng(candidate.lat, candidate.lng)
+      ? calculateHaversineDistanceMeters(
+          selectedLocation.lat,
+          selectedLocation.lng,
+          candidate.lat,
+          candidate.lng
+        )
+      : null;
+
+  const decision = decidePhotoLocationVerification({
+    eligibility,
+    detection: {
+      provider,
+      landmarkDetected: true,
+      name: candidate.name,
+      score: candidate.score,
+      distanceMeters
+    }
+  });
+
+  return {
+    candidate,
+    decision,
+    distanceMeters
+  };
+}
+
+function pickBestEvaluation(evaluations) {
+  if (!Array.isArray(evaluations) || evaluations.length === 0) {
+    return null;
+  }
+
+  const matchEvaluations = evaluations.filter((item) => item.decision?.status === "match");
+  if (matchEvaluations.length > 0) {
+    return matchEvaluations.reduce((best, current) => {
+      const bestDistance = Number.isFinite(best.distanceMeters)
+        ? best.distanceMeters
+        : Number.POSITIVE_INFINITY;
+      const currentDistance = Number.isFinite(current.distanceMeters)
+        ? current.distanceMeters
+        : Number.POSITIVE_INFINITY;
+
+      if (currentDistance !== bestDistance) {
+        return currentDistance < bestDistance ? current : best;
+      }
+
+      const bestScore = Number.isFinite(best.candidate?.score) ? best.candidate.score : -1;
+      const currentScore = Number.isFinite(current.candidate?.score) ? current.candidate.score : -1;
+
+      return currentScore > bestScore ? current : best;
+    });
+  }
+
+  const mismatchEvaluations = evaluations.filter((item) => item.decision?.status === "mismatch");
+  if (mismatchEvaluations.length > 0) {
+    return mismatchEvaluations.reduce((best, current) => {
+      const bestScore = Number.isFinite(best.candidate?.score) ? best.candidate.score : -1;
+      const currentScore = Number.isFinite(current.candidate?.score) ? current.candidate.score : -1;
+
+      if (currentScore !== bestScore) {
+        return currentScore > bestScore ? current : best;
+      }
+
+      const bestDistance = Number.isFinite(best.distanceMeters) ? best.distanceMeters : -1;
+      const currentDistance = Number.isFinite(current.distanceMeters) ? current.distanceMeters : -1;
+
+      return currentDistance > bestDistance ? current : best;
+    });
+  }
+
+  return evaluations.reduce((best, current) => {
+    const bestScore = Number.isFinite(best.candidate?.score) ? best.candidate.score : -1;
+    const currentScore = Number.isFinite(current.candidate?.score) ? current.candidate.score : -1;
+
+    if (currentScore !== bestScore) {
+      return currentScore > bestScore ? current : best;
+    }
+
+    const bestHasDistance = Number.isFinite(best.distanceMeters) ? 1 : 0;
+    const currentHasDistance = Number.isFinite(current.distanceMeters) ? 1 : 0;
+
+    if (currentHasDistance !== bestHasDistance) {
+      return currentHasDistance > bestHasDistance ? current : best;
+    }
+
+    if (currentHasDistance && bestHasDistance) {
+      return current.distanceMeters < best.distanceMeters ? current : best;
+    }
+
+    return best;
+  });
+}
+
 export function toPhotoVerificationPersistenceFields(result) {
   if (!result || result.status === "skipped") {
     return {
@@ -150,12 +285,30 @@ export async function verifyPhotoLocationForPost(input = {}, { logContext = {} }
   const selectedLocation = buildSelectedLocation(input);
 
   if (!ENV.PHOTO_LOCATION_VERIFICATION_ENABLED) {
-    return buildSkippedResult("feature_disabled", selectedLocation);
+    const result = buildSkippedResult("feature_disabled", selectedLocation);
+
+    debugLog("feature-disabled", {
+      ...logContext,
+      selectedLocationName: selectedLocation.locationName,
+      status: result.status,
+      reasons: result.reasons
+    });
+
+    return result;
   }
 
   const primaryImageUrl = pickPrimaryImageUrl(input.images);
   if (!primaryImageUrl) {
-    return buildSkippedResult("no_images", selectedLocation);
+    const result = buildSkippedResult("no_images", selectedLocation);
+
+    debugLog("no-images", {
+      ...logContext,
+      selectedLocationName: selectedLocation.locationName,
+      status: result.status,
+      reasons: result.reasons
+    });
+
+    return result;
   }
 
   const eligibility = getPhotoLocationEligibility({
@@ -170,8 +323,18 @@ export async function verifyPhotoLocationForPost(input = {}, { logContext = {} }
     addressType: selectedLocation.addressType
   });
 
+  debugLog("eligibility", {
+    ...logContext,
+    selectedLocationName: selectedLocation.locationName,
+    shouldCheck: eligibility.shouldCheck,
+    reasons: eligibility.reasons,
+    osmClass: eligibility.normalized?.osmClass,
+    osmSubtype: eligibility.normalized?.osmSubtype,
+    addressType: eligibility.normalized?.addressType
+  });
+
   if (!eligibility.shouldCheck) {
-    return {
+    const result = {
       status: "skipped",
       shouldCheck: false,
       checkedAt: null,
@@ -183,45 +346,123 @@ export async function verifyPhotoLocationForPost(input = {}, { logContext = {} }
       selectedLocation,
       detectedLandmark: null
     };
+
+    debugLog("result", {
+      ...logContext,
+      selectedLocationName: selectedLocation.locationName,
+      status: result.status,
+      reasons: result.reasons
+    });
+
+    return result;
   }
 
   try {
     const detection = await detectLandmarkFromImageUrl(primaryImageUrl);
 
-    const distanceMeters =
-      detection.landmarkDetected &&
-      hasValidLatLng(selectedLocation.lat, selectedLocation.lng) &&
-      hasValidLatLng(detection.lat, detection.lng)
-        ? calculateHaversineDistanceMeters(
-            selectedLocation.lat,
-            selectedLocation.lng,
-            detection.lat,
-            detection.lng
-          )
-        : null;
-
-    const decision = decidePhotoLocationVerification({
-      eligibility,
-      detection: {
-        ...detection,
-        distanceMeters
-      }
+    debugLog("detection", {
+      ...logContext,
+      selectedLocationName: selectedLocation.locationName,
+      selectedImageUrl: primaryImageUrl,
+      visionImageUrl: detection?.imageUrlUsed ?? primaryImageUrl,
+      detection
     });
 
+    const provider =
+      normalizeOptionalText(detection?.provider) || DEFAULT_PHOTO_VERIFICATION_PROVIDER;
+
+    const candidates = extractLandmarkCandidates(detection);
+    const evaluations = candidates.map((candidate) =>
+      buildCandidateEvaluation(selectedLocation, eligibility, candidate, provider)
+    );
+
+    debugLog("candidate-evaluations", {
+      ...logContext,
+      selectedLocationName: selectedLocation.locationName,
+      evaluations: evaluations.map((item) => ({
+        candidateName: item.candidate?.name,
+        candidateScore: item.candidate?.score,
+        distanceMeters: item.distanceMeters,
+        status: item.decision?.status,
+        reasons: item.decision?.reasons
+      }))
+    });
+
+    let chosen = pickBestEvaluation(evaluations);
+
+    if (!chosen) {
+      const distanceMeters =
+        detection.landmarkDetected &&
+        hasValidLatLng(selectedLocation.lat, selectedLocation.lng) &&
+        hasValidLatLng(detection.lat, detection.lng)
+          ? calculateHaversineDistanceMeters(
+              selectedLocation.lat,
+              selectedLocation.lng,
+              detection.lat,
+              detection.lng
+            )
+          : null;
+
+      const decision = decidePhotoLocationVerification({
+        eligibility,
+        detection: {
+          ...detection,
+          distanceMeters
+        }
+      });
+
+      chosen = {
+        candidate: detection.landmarkDetected
+          ? {
+              name: detection.name,
+              score: detection.score,
+              lat: detection.lat,
+              lng: detection.lng
+            }
+          : null,
+        decision,
+        distanceMeters
+      };
+    }
+
     const result = {
-      ...decision,
+      ...chosen.decision,
       shouldCheck: true,
       checkedAt: new Date(),
       selectedLocation,
-      detectedLandmark: detection.landmarkDetected
+      detectedLandmark: chosen.candidate
         ? {
-            name: detection.name,
-            score: detection.score,
-            lat: detection.lat,
-            lng: detection.lng
+            name: chosen.candidate.name,
+            score: chosen.candidate.score,
+            lat: chosen.candidate.lat,
+            lng: chosen.candidate.lng
           }
         : null
     };
+
+    debugLog("decision", {
+      ...logContext,
+      selectedLocationName: selectedLocation.locationName,
+      selectedImageUrl: primaryImageUrl,
+      visionImageUrl: detection?.imageUrlUsed ?? primaryImageUrl,
+      detectedName: result.detectedName,
+      confidence: result.confidence,
+      distanceMeters: result.distanceMeters,
+      status: result.status,
+      reasons: result.reasons
+    });
+
+    debugLog("result", {
+      ...logContext,
+      selectedLocationName: selectedLocation.locationName,
+      selectedImageUrl: primaryImageUrl,
+      visionImageUrl: detection?.imageUrlUsed ?? primaryImageUrl,
+      detectedName: result.detectedName,
+      confidence: result.confidence,
+      distanceMeters: result.distanceMeters,
+      status: result.status,
+      reasons: result.reasons
+    });
 
     if (result.status === "mismatch") {
       console.warn("Photo-location verification mismatch detected", {
@@ -239,10 +480,13 @@ export async function verifyPhotoLocationForPost(input = {}, { logContext = {} }
       ...logContext,
       locationName: selectedLocation.locationName,
       error: err?.message || String(err),
-      code: err?.code || null
+      code: err?.code || null,
+      status: err?.status ?? null,
+      bodySample: err?.bodySample ?? null,
+      selectedImageUrl: primaryImageUrl
     });
 
-    return {
+    const result = {
       status: "uncertain",
       shouldCheck: true,
       checkedAt: new Date(),
@@ -254,5 +498,19 @@ export async function verifyPhotoLocationForPost(input = {}, { logContext = {} }
       selectedLocation,
       detectedLandmark: null
     };
+
+    debugLog("provider-error-result", {
+      ...logContext,
+      selectedLocationName: selectedLocation.locationName,
+      error: err?.message || String(err),
+      code: err?.code || null,
+      status: err?.status ?? null,
+      bodySample: err?.bodySample ?? null,
+      statusResult: result.status,
+      reasons: result.reasons,
+      selectedImageUrl: primaryImageUrl
+    });
+
+    return result;
   }
 }

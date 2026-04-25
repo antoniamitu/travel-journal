@@ -46,6 +46,15 @@ const EMPTY_FORM = {
   privacy: "private"
 };
 
+const EMPTY_DIALOG_STATE = {
+  type: null,
+  imageLocalId: null,
+  busy: false,
+  mismatchData: null
+};
+
+const DEFAULT_PHOTO_MISMATCH_MESSAGE =
+  "The photo seems to correspond to a different location than the one selected. Check the location or upload another image.";
 
 function isFiniteNumber(value) {
   return typeof value === "number" && Number.isFinite(value);
@@ -195,6 +204,55 @@ function messageToneClass(tone) {
   if (tone === "error") return "text-rose-600";
   if (tone === "success") return "text-emerald-600";
   return "text-slate-500";
+}
+
+function normalizeOptionalText(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+function toFiniteNumberOrNull(value) {
+  if (value == null || value === "") {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizePhotoMismatchData(data) {
+  const verification =
+    data?.verification && typeof data.verification === "object" ? data.verification : {};
+
+  return {
+    // Keep modal copy controlled by the frontend so this screen stays in one language
+    // even if the backend message is localized differently.
+    message: DEFAULT_PHOTO_MISMATCH_MESSAGE,
+    detectedLandmark:
+      normalizeOptionalText(verification.detectedLandmark) ||
+      normalizeOptionalText(verification.detectedName),
+    confidence: toFiniteNumberOrNull(verification.confidence),
+    distanceMeters: toFiniteNumberOrNull(verification.distanceMeters)
+  };
+}
+
+function formatMismatchConfidence(confidence) {
+  if (!Number.isFinite(confidence)) return null;
+
+  const normalized = confidence >= 0 && confidence <= 1 ? confidence * 100 : confidence;
+  return `${Math.round(normalized)}%`;
+}
+
+function formatMismatchDistance(distanceMeters) {
+  if (!Number.isFinite(distanceMeters) || distanceMeters < 0) return null;
+
+  if (distanceMeters >= 1000) {
+    const km = distanceMeters / 1000;
+    return km >= 10 ? `${km.toFixed(0)} km` : `${km.toFixed(1)} km`;
+  }
+
+  return `${Math.round(distanceMeters)} m`;
 }
 
 function getDisplayLabel(item) {
@@ -597,11 +655,7 @@ export default function PostEditorPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUsingGps, setIsUsingGps] = useState(false);
   const [reverseStatus, setReverseStatus] = useState("");
-  const [dialogState, setDialogState] = useState({
-    type: null,
-    imageLocalId: null,
-    busy: false
-  });
+  const [dialogState, setDialogState] = useState(EMPTY_DIALOG_STATE);
 
   const initialSnapshotRef = useRef(buildSnapshot(EMPTY_FORM, []));
   const loadAbortRef = useRef(null);
@@ -644,6 +698,7 @@ export default function PostEditorPage() {
       setLocationQuery("");
       setFieldErrors({});
       setReverseStatus("");
+      setDialogState(EMPTY_DIALOG_STATE);
       initialSnapshotRef.current = buildSnapshot(EMPTY_FORM, []);
       setPageStatus("ready");
     }
@@ -1044,7 +1099,8 @@ export default function PostEditorPage() {
       setDialogState({
         type: "remove-image",
         imageLocalId: localId,
-        busy: false
+        busy: false,
+        mismatchData: null
       });
     },
     [nonLocationControlsDisabled]
@@ -1054,11 +1110,11 @@ export default function PostEditorPage() {
     const localId = dialogState.imageLocalId;
     if (!localId) return;
 
-    setDialogState((prev) => ({ ...prev, busy: true }));
+    setDialogState((prev) => ({ ...prev, busy: true, mismatchData: null }));
 
     const target = imagesRef.current.find((item) => item.localId === localId);
     if (!target) {
-      setDialogState({ type: null, imageLocalId: null, busy: false });
+      setDialogState(EMPTY_DIALOG_STATE);
       return;
     }
 
@@ -1076,7 +1132,7 @@ export default function PostEditorPage() {
     removeImageImmediately(localId);
     await bestEffortCleanupPublicIds(publicIdToCleanup);
 
-    setDialogState({ type: null, imageLocalId: null, busy: false });
+    setDialogState(EMPTY_DIALOG_STATE);
   }, [bestEffortCleanupPublicIds, dialogState.imageLocalId, removeImageImmediately]);
 
   const handleRetryImage = useCallback(
@@ -1127,7 +1183,7 @@ export default function PostEditorPage() {
         }
 
         if (!isSupportedImageFile(file)) {
-          toast.error("Unsupported file format. Please upload JPEG, PNG, or WebP.");
+          toast.error("Unsupported file format. Please upload JPEG, PNG, WebP, HEIC, or HEIF.");
           if (isHeicLikeFile(file)) {
             toast.error(
               "Tip: HEIC photos may not be supported everywhere. Convert to JPEG or try another file."
@@ -1213,7 +1269,7 @@ export default function PostEditorPage() {
   }, [resolveLocationFromCoords]);
 
   const handleDiscard = useCallback(async () => {
-    setDialogState((prev) => ({ ...prev, busy: true }));
+    setDialogState((prev) => ({ ...prev, busy: true, mismatchData: null  }));
 
     Object.values(uploadControllersRef.current).forEach((controller) => {
       if (controller && typeof controller.abort === "function") {
@@ -1228,7 +1284,7 @@ export default function PostEditorPage() {
 
     await bestEffortCleanupPublicIds(unsavedIds);
 
-    setDialogState({ type: null, imageLocalId: null, busy: false });
+    setDialogState(EMPTY_DIALOG_STATE);
 
     if (isEdit) {
       navigate(`/posts/${id}`);
@@ -1321,6 +1377,29 @@ export default function PostEditorPage() {
           }));
         }
 
+        const isPhotoLocationMismatch = status === 422 && data?.code === "PHOTO_LOCATION_MISMATCH";
+
+        if (isPhotoLocationMismatch) {
+          const mismatchData = normalizePhotoMismatchData(data);
+
+          setFieldErrors((prev) => ({
+            ...prev,
+            ...backendErrors,
+            locationName:
+              backendErrors?.locationName ||
+              "The selected location doesn't seem to match the uploaded photo."
+          }));
+
+          setDialogState({
+            type: "photo-location-mismatch",
+            imageLocalId: null,
+            busy: false,
+            mismatchData
+          });
+
+          return;
+        }
+
         if (status === 401) {
           toast.error("Session expired. Please login again.");
         } else if (status === 404) {
@@ -1337,6 +1416,7 @@ export default function PostEditorPage() {
         }
       } finally {
         setIsSubmitting(false);
+        submitAbortRef.current = null;
       }
     },
     [form, id, images, isEdit, localValidationErrors, navigate, setSelectedPlace]
@@ -1626,7 +1706,8 @@ export default function PostEditorPage() {
                     setDialogState({
                       type: "discard",
                       imageLocalId: null,
-                      busy: false
+                      busy: false,
+                      mismatchData: null
                     });
                   }}
                   className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
@@ -1670,7 +1751,8 @@ export default function PostEditorPage() {
                         setDialogState({
                           type: "discard",
                           imageLocalId: null,
-                          busy: false
+                          busy: false,
+                          mismatchData: null
                         });
                       }}
                       className="inline-flex min-h-11 flex-1 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
@@ -1749,7 +1831,7 @@ export default function PostEditorPage() {
         message="Your changes will not be saved. Any newly uploaded draft images will be cleaned up best-effort."
         confirmLabel="Discard"
         cancelLabel="Keep Editing"
-        onClose={() => setDialogState({ type: null, imageLocalId: null, busy: false })}
+        onClose={() => setDialogState(EMPTY_DIALOG_STATE)}
         onConfirm={handleDiscard}
       />
 
@@ -1765,8 +1847,69 @@ export default function PostEditorPage() {
         }
         confirmLabel="Remove"
         cancelLabel="Keep"
-        onClose={() => setDialogState({ type: null, imageLocalId: null, busy: false })}
+        onClose={() => setDialogState(EMPTY_DIALOG_STATE)}
         onConfirm={handleConfirmRemoveImage}
+      />
+
+      <ActionDialog
+        open={dialogState.type === "photo-location-mismatch"}
+        tone="danger"
+        busy={false}
+        title="Photo and location don't seem to match"
+        message={
+          <div>
+            <p>{dialogState.mismatchData?.message || DEFAULT_PHOTO_MISMATCH_MESSAGE}</p>
+
+            {(dialogState.mismatchData?.detectedLandmark ||
+              Number.isFinite(dialogState.mismatchData?.confidence) ||
+              Number.isFinite(dialogState.mismatchData?.distanceMeters)) && (
+              <div className="mt-4 rounded-2xl border border-rose-100 bg-rose-50/70 p-4">
+                <div className="text-sm font-semibold text-slate-900">
+                  What the verification found
+                </div>
+
+                <div className="mt-3 space-y-2 text-sm text-slate-700">
+                  {dialogState.mismatchData?.detectedLandmark ? (
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-500">Detected landmark</span>
+                      <span className="text-right font-medium text-slate-900">
+                        {dialogState.mismatchData.detectedLandmark}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {Number.isFinite(dialogState.mismatchData?.confidence) ? (
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-500">Confidence</span>
+                      <span className="text-right font-medium text-slate-900">
+                        {formatMismatchConfidence(dialogState.mismatchData.confidence)}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {Number.isFinite(dialogState.mismatchData?.distanceMeters) ? (
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-500">Distance from selected place</span>
+                      <span className="text-right font-medium text-slate-900">
+                        {formatMismatchDistance(dialogState.mismatchData.distanceMeters)}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            <p className="mt-4 text-slate-600">
+              Your uploaded images are still here. You can correct the location or replace the
+              photo and try again.
+            </p>
+          </div>
+        }
+        confirmLabel="OK, I'll fix it"
+        showCancelButton={false}
+        icon="📷"
+        onClose={() => setDialogState(EMPTY_DIALOG_STATE)}
+        onConfirm={() => setDialogState(EMPTY_DIALOG_STATE)}
       />
     </>
   );

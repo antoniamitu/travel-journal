@@ -61,7 +61,6 @@ const envSchema = z
     FRONTEND_URL: z.string().optional().transform(normalizeOrigin),
     FRONTEND_URL_DEV: z.string().optional().transform(normalizeOrigin),
 
-    // PRD #2 — Nominatim
     NOMINATIM_USER_AGENT: z.string().trim().min(10, "NOMINATIM_USER_AGENT is required"),
 
     NOMINATIM_BASE_URL: z
@@ -71,7 +70,6 @@ const envSchema = z
       .default("https://nominatim.openstreetmap.org")
       .transform(normalizeUrlNoTrailingSlash),
 
-    // PRD #3 — Cloudinary
     CLOUDINARY_CLOUD_NAME: z
       .string()
       .trim()
@@ -99,7 +97,6 @@ const envSchema = z
         "CLOUDINARY_FOLDER may contain only letters, digits, '/', '_', '-'"
       ),
 
-    // PRD #4 — Gemini AI
     GEMINI_API_KEY: z.string().trim().min(1, "GEMINI_API_KEY is required"),
 
     GEMINI_MODEL: z
@@ -157,7 +154,6 @@ const envSchema = z
       .max(10_000, "AI_RETRY_BASE_DELAY_MS must be at most 10000 ms")
       .default(500),
 
-    // PRD #6 — Photo–Location Verification
     PHOTO_LOCATION_VERIFICATION_ENABLED: z.preprocess(
       normalizeBoolean,
       z.boolean().default(false)
@@ -243,14 +239,14 @@ const envSchema = z
     }
 
     if (
-      env.LANDMARK_MISMATCH_MIN_DISTANCE_METERS <
+      env.LANDMARK_MISMATCH_MIN_DISTANCE_METERS <=
       env.LANDMARK_MATCH_MAX_DISTANCE_METERS
     ) {
       ctx.addIssue({
         code: "custom",
         path: ["LANDMARK_MISMATCH_MIN_DISTANCE_METERS"],
         message:
-          "LANDMARK_MISMATCH_MIN_DISTANCE_METERS must be greater than or equal to LANDMARK_MATCH_MAX_DISTANCE_METERS"
+          "LANDMARK_MISMATCH_MIN_DISTANCE_METERS must be greater than LANDMARK_MATCH_MAX_DISTANCE_METERS"
       });
     }
   });

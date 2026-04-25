@@ -88,6 +88,7 @@ export function mapPostToApi(post, viewerUserId) {
   return {
     id: post.id,
     userId: post.user_id,
+    username: post.user?.username || null,
     title: post.title,
     content: post.content,
     latitude: post.latitude,
@@ -102,15 +103,29 @@ export function mapPostToApi(post, viewerUserId) {
     sentiment: post.sentiment,
     sentimentScore: normalizeNullableNumber(post.sentiment_score),
     privacy: post.privacy,
-    photoVerification: {
-      status: photoVerificationStatus,
-      checkedAt: post.photo_verification_checked_at ?? null,
-      confidence: normalizeNullableNumber(post.photo_verification_confidence),
-      distanceMeters: normalizeNullableNumber(post.photo_verification_distance_meters),
-      detectedName: normalizeOptionalText(post.photo_verification_detected_name),
-      reasons: normalizeStringArray(post.photo_verification_reasons),
-      provider: normalizeOptionalText(post.photo_verification_provider)
-    },
+    photoVerification: photoVerificationStatus
+      ? isOwner
+        ? {
+            status: photoVerificationStatus,
+            checkedAt: post.photo_verification_checked_at ?? null,
+            confidence: normalizeNullableNumber(post.photo_verification_confidence),
+            distanceMeters: normalizeNullableNumber(post.photo_verification_distance_meters),
+            detectedName: normalizeOptionalText(post.photo_verification_detected_name),
+            reasons: normalizeStringArray(post.photo_verification_reasons),
+            provider: normalizeOptionalText(post.photo_verification_provider)
+          }
+        : photoVerificationStatus === "match"
+          ? {
+              status: "match",
+              checkedAt: null,
+              confidence: normalizeNullableNumber(post.photo_verification_confidence),
+              distanceMeters: null,
+              detectedName: null,
+              reasons: [],
+              provider: null
+            }
+          : null
+      : null,
     createdAt: post.created_at,
     updatedAt: post.updated_at,
     isOwner,

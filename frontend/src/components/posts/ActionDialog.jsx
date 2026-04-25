@@ -1,5 +1,5 @@
 // frontend/src/components/posts/ActionDialog.jsx
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useId, useMemo, useRef } from "react";
 
 function getFocusableElements(root) {
   if (!root) return [];
@@ -8,7 +8,11 @@ function getFocusableElements(root) {
     root.querySelectorAll(
       'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
     )
-  ).filter((el) => !el.hasAttribute("disabled") && !el.getAttribute("aria-hidden"));
+  ).filter(
+    (el) =>
+      !el.hasAttribute("disabled") &&
+      el.getAttribute("aria-hidden") !== "true"
+  );
 }
 
 function DefaultIcon({ tone }) {
@@ -32,11 +36,19 @@ export default function ActionDialog({
   titleId,
   descriptionId,
   icon,
-  confirmBusyLabel = "Please wait..."
+  confirmBusyLabel = "Please wait...",
+  showCancelButton = true
 }) {
   const overlayRef = useRef(null);
   const cancelRef = useRef(null);
+  const confirmRef = useRef(null);
   const lastFocusedRef = useRef(null);
+
+  const generatedTitleId = useId();
+  const generatedDescriptionId = useId();
+
+  const resolvedTitleId = titleId || generatedTitleId;
+  const resolvedDescriptionId = descriptionId || generatedDescriptionId;
 
   const iconToneClass = useMemo(() => {
     if (tone === "neutral") return "bg-slate-100 text-slate-700";
@@ -85,7 +97,11 @@ export default function ActionDialog({
     }
 
     document.addEventListener("keydown", onKeyDown);
-    requestAnimationFrame(() => cancelRef.current?.focus());
+
+    requestAnimationFrame(() => {
+      const target = showCancelButton ? cancelRef.current : confirmRef.current;
+      target?.focus();
+    });
 
     return () => {
       document.body.style.overflow = previousOverflow;
@@ -95,7 +111,7 @@ export default function ActionDialog({
         requestAnimationFrame(() => lastFocusedRef.current.focus());
       }
     };
-  }, [open, busy, onClose]);
+  }, [open, busy, onClose, showCancelButton]);
 
   if (!open) return null;
 
@@ -112,8 +128,8 @@ export default function ActionDialog({
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
+        aria-labelledby={resolvedTitleId}
+        aria-describedby={message ? resolvedDescriptionId : undefined}
         className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl"
       >
         <div className="flex items-start gap-4">
@@ -125,27 +141,33 @@ export default function ActionDialog({
           </div>
 
           <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="text-lg font-semibold text-slate-900">
+            <h2 id={resolvedTitleId} className="text-lg font-semibold text-slate-900">
               {title}
             </h2>
-            <p id={descriptionId} className="mt-2 text-sm leading-6 text-slate-600">
-              {message}
-            </p>
+
+            {message ? (
+              <div id={resolvedDescriptionId} className="mt-2 text-sm leading-6 text-slate-600">
+                {message}
+              </div>
+            ) : null}
           </div>
         </div>
 
         <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-          <button
-            ref={cancelRef}
-            type="button"
-            onClick={() => onClose?.()}
-            disabled={busy}
-            className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {cancelLabel}
-          </button>
+          {showCancelButton ? (
+            <button
+              ref={cancelRef}
+              type="button"
+              onClick={() => onClose?.()}
+              disabled={busy}
+              className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {cancelLabel}
+            </button>
+          ) : null}
 
           <button
+            ref={confirmRef}
             type="button"
             onClick={() => onConfirm?.()}
             disabled={busy}

@@ -32,6 +32,11 @@ const fixNegZero = (n) => (Object.is(n, -0) ? 0 : n);
 const POST_API_SELECT = {
   id: true,
   user_id: true,
+  user: {
+    select: {
+      username: true
+    }
+  },
   title: true,
   content: true,
   latitude: true,
@@ -549,7 +554,7 @@ function sendPhotoLocationMismatch(res, result) {
   return res.status(422).json({
     ok: false,
     code: "PHOTO_LOCATION_MISMATCH",
-    message: "Fotografia pare să corespundă unei alte locații decât cea selectată.",
+    message: "The photo seems to correspond to a different location than the one selected.",
     verification: {
       status: "mismatch",
       detectedLandmark: result.detectedName,

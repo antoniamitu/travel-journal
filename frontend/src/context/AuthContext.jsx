@@ -137,61 +137,75 @@ export function AuthProvider({ children }) {
     [persistAuth]
   );
 
-  useEffect(() => {
-    let cancelled = false;
+useEffect(() => {
+  let cancelled = false;
+  const controller = new AbortController();
 
-    async function init() {
+  async function init() {
+    try {
+      const existingToken = localStorage.getItem(LS_TOKEN_KEY) || "";
+      const cachedUser = safeParseJson(localStorage.getItem(LS_USER_KEY));
+
+      if (!existingToken) {
+        if (!cancelled) {
+          setToken("");
+          setUser(null);
+        }
+        return;
+      }
+
+      if (!cancelled) {
+        setToken(existingToken);
+        if (cachedUser) {
+          setUser(cachedUser);
+        }
+      }
+
       try {
-        const existingToken = localStorage.getItem(LS_TOKEN_KEY) || "";
-        const cachedUser = safeParseJson(localStorage.getItem(LS_USER_KEY));
+        const res = await api.get("/auth/me", {
+          timeout: 15000,
+          signal: controller.signal
+        });
 
-        if (!existingToken) {
-          if (!cancelled) {
-            setToken("");
-            setUser(null);
-          }
+        const me = res?.data?.user;
+
+        if (!me) {
+          throw new Error("Invalid /auth/me response shape: missing user.");
+        }
+
+        if (!cancelled) {
+          setUser(me);
+          persistAuth(existingToken, me);
+        }
+      } catch (err) {
+        if (
+          err?.name === "CanceledError" ||
+          err?.code === "ERR_CANCELED" ||
+          err?.name === "AbortError"
+        ) {
           return;
         }
 
-        if (!cancelled) {
-          setToken(existingToken);
-          if (cachedUser) {
-            setUser(cachedUser);
-          }
-        }
-
-        try {
-          const res = await api.get("/auth/me", { timeout: 15000 });
-          const me = res?.data?.user;
-
-          if (!me) {
-            throw new Error("Invalid /auth/me response shape: missing user.");
-          }
-
-          if (!cancelled) {
-            setUser(me);
-            persistAuth(existingToken, me);
-          }
-        } catch (err) {
-          if (!cancelled && isUnauthorizedError(err)) {
-            forceSessionReset();
-          } else if (!cancelled && !cachedUser) {
-            clearAuthState();
-          }
-        }
-      } finally {
-        if (!cancelled) {
-          setIsInitializing(false);
+        if (!cancelled && isUnauthorizedError(err)) {
+          forceSessionReset();
+        } else if (!cancelled && !cachedUser) {
+          clearAuthState();
         }
       }
+    } finally {
+      if (!cancelled) {
+        setIsInitializing(false);
+      }
     }
+  }
 
-    init();
+  init();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [persistAuth, clearAuthState, forceSessionReset]);
+  return () => {
+    cancelled = true;
+    controller.abort();
+  };
+}, [persistAuth, clearAuthState, forceSessionReset]);
 
   useEffect(() => {
     function onStorage(e) {

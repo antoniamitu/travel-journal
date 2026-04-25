@@ -6,35 +6,78 @@ const COMBINING_MARKS_RE = /[\u0300-\u036f]/g;
 const NON_ALPHANUMERIC_RE = /[^a-z0-9]+/g;
 const MULTISPACE_RE = /\s+/g;
 
+/**
+ * IMPORTANT:
+ * This allowlist is intentionally narrower than classifyPlaceCategory().
+ * A place may be classified nicely in the product UI and still remain
+ * ineligible for photo-location verification.
+ */
 const ELIGIBLE_OSM_TYPES = new Map([
-  ["historic", new Set(["castle", "monument", "memorial"])],
-  ["tourism", new Set(["attraction", "museum"])],
-  ["amenity", new Set(["museum", "place_of_worship"])],
-  ["building", new Set(["church", "cathedral"])]
+  [
+    "historic",
+    new Set([
+      "castle",
+      "church",
+      "fort",
+      "memorial",
+      "monastery",
+      "monument",
+      "mosque",
+      "ruins",
+      "temple",
+      "tower"
+    ])
+  ],
+  ["tourism", new Set(["attraction", "gallery", "museum"])],
+  ["amenity", new Set(["museum", "place_of_worship", "theatre", "theater"])],
+  [
+    "building",
+    new Set([
+      "bridge",
+      "castle",
+      "cathedral",
+      "chapel",
+      "church",
+      "clock_tower",
+      "monastery",
+      "mosque",
+      "museum",
+      "palace",
+      "synagogue",
+      "temple",
+      "tower",
+      "triumphal_arch"
+    ])
+  ],
+  ["man_made", new Set(["bridge", "tower", "water_tower", "windmill"])]
 ]);
 
 const GENERIC_ADDRESS_TYPES = new Set([
-  "road",
-  "house_number",
-  "postcode",
-  "suburb",
-  "quarter",
-  "neighbourhood",
+  "administrative",
   "city",
-  "town",
-  "village",
-  "municipality",
-  "county",
-  "state",
   "country",
-  "administrative"
+  "county",
+  "house_number",
+  "municipality",
+  "neighbourhood",
+  "neighborhood",
+  "path",
+  "pedestrian",
+  "postcode",
+  "quarter",
+  "residential",
+  "road",
+  "state",
+  "suburb",
+  "town",
+  "village"
 ]);
 
 const GENERIC_LOCATION_LABELS = new Set([
-  "unknown location",
-  "unknown location ocean remote",
   "ocean",
-  "remote location"
+  "remote location",
+  "unknown location",
+  "unknown location ocean remote"
 ]);
 
 function normalizeOptionalText(value) {

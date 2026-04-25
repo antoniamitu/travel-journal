@@ -57,23 +57,16 @@ function pickFirstDisplaySegment(displayName) {
 }
 
 function pickLocationName(address = {}, displayName, exactName = null) {
-  // 1. Exact POI name from Nominatim should always win when present.
   const normalizedExactName = normalizeOptionalText(exactName);
   if (normalizedExactName) {
     return normalizedExactName;
   }
 
-  // 2. If exactName is missing, prefer the first display_name segment.
-  // This is often the best remaining POI-like label and avoids cases like:
-  // display_name = "Palais du Louvre, Rue de Rivoli, Paris, France"
-  // address.road = "Rue de Rivoli"
   const displayFirst = pickFirstDisplaySegment(displayName);
   if (displayFirst) {
     return displayFirst;
   }
 
-  // 3. Only then fall back to address components that are reasonably usable
-  // as place labels. Avoid generic semantic keys like amenity/shop/historic.
   const primary =
     normalizeOptionalText(address.attraction) ||
     normalizeOptionalText(address.building) ||
@@ -132,7 +125,7 @@ function buildMappedResult(
     city,
     country,
     displayName,
-    osmClass: normalizeOptionalText(item.class),
+    osmClass: normalizeOptionalText(item.class) || normalizeOptionalText(item.category),
     osmSubtype: normalizeOptionalText(item.type),
     addressType: normalizeOptionalText(item.addresstype),
 

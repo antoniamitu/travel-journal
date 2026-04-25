@@ -11,65 +11,197 @@ const PLACE_CATEGORY_VALUES = Object.freeze([
   "other"
 ]);
 
-const GENERIC_OSM_CLASSES_FOR_ENRICHMENT = new Set(["highway", "building", "place"]);
-const ADDRESS_TYPES_FOR_ENRICHMENT = new Set(["road", "house_number"]);
+const GENERIC_OSM_CLASSES_FOR_ENRICHMENT = new Set([
+  "boundary",
+  "building",
+  "highway",
+  "landuse",
+  "place"
+]);
+
+const GENERIC_NATURAL_SUBTYPES_FOR_ENRICHMENT = new Set([
+  "bare_rock",
+  "fell",
+  "grass",
+  "grassland",
+  "heath",
+  "moor",
+  "mud",
+  "sand",
+  "scree",
+  "scrub",
+  "shingle",
+  "shrubbery",
+  "tree",
+  "tree_row",
+  "tundra",
+  "wetland",
+  "wood"
+]);
+
+const ADDRESS_TYPES_FOR_ENRICHMENT = new Set([
+  "house_number",
+  "neighbourhood",
+  "neighborhood",
+  "path",
+  "pedestrian",
+  "quarter",
+  "residential",
+  "road",
+  "suburb"
+]);
 
 const COMBINING_MARKS_RE = /[\u0300-\u036f]/g;
 const NON_ALPHANUMERIC_RE = /[^a-z0-9]+/g;
 const MULTISPACE_RE = /\s+/g;
 
-const RELIGIOUS_BUILDING_SUBTYPES = new Set([
-  "church",
-  "cathedral",
-  "chapel",
-  "basilica",
-  "mosque",
-  "synagogue",
-  "temple",
-  "monastery",
-  "abbey"
-]);
-
-const HISTORICAL_BUILDING_SUBTYPES = new Set([
-  "museum",
-  "gallery",
-  "palace",
-  "castle",
-  "fort",
-  "citadel",
-  "ruins"
-]);
+const RELIGIOUS_AMENITY_SUBTYPES = new Set(["monastery", "place_of_worship"]);
 
 const FOOD_DRINK_AMENITY_SUBTYPES = new Set([
-  "restaurant",
-  "cafe",
   "bar",
-  "pub",
+  "biergarten",
+  "cafe",
   "fast_food",
   "food_court",
-  "biergarten"
+  "ice_cream",
+  "pub",
+  "restaurant"
 ]);
 
 const ENTERTAINMENT_AMENITY_SUBTYPES = new Set([
-  "cinema",
-  "theatre",
-  "theater",
-  "nightclub",
   "arts_centre",
-  "arts_center"
+  "arts_center",
+  "casino",
+  "cinema",
+  "events_venue",
+  "exhibition_centre",
+  "music_venue",
+  "nightclub",
+  "planetarium",
+  "theatre",
+  "theater"
 ]);
 
-const ENTERTAINMENT_LEISURE_SUBTYPES = new Set([
+const SHOPPING_AMENITY_SUBTYPES = new Set(["marketplace"]);
+
+const URBAN_LANDMARK_AMENITY_SUBTYPES = new Set(["fountain"]);
+
+const RELIGIOUS_BUILDING_SUBTYPES = new Set([
+  "cathedral",
+  "chapel",
+  "church",
+  "kingdom_hall",
+  "monastery",
+  "mosque",
+  "religious",
+  "shrine",
+  "synagogue",
+  "temple"
+]);
+
+const HISTORICAL_BUILDING_SUBTYPES = new Set([
+  "castle",
+  "citadel",
+  "fort",
+  "manor",
+  "palace",
+  "ruins",
+  "windmill"
+]);
+
+const URBAN_LANDMARK_BUILDING_SUBTYPES = new Set([
+  "bridge",
+  "clock_tower",
+  "museum",
+  "tower",
+  "triumphal_arch"
+]);
+
+const ENTERTAINMENT_BUILDING_SUBTYPES = new Set([
+  "cinema",
+  "grandstand",
+  "pavilion",
   "stadium",
   "sports_centre",
   "sports_center",
-  "theme_park",
+  "sports_hall",
+  "theatre",
+  "theater"
+]);
+
+const SHOPPING_BUILDING_SUBTYPES = new Set(["kiosk", "retail", "supermarket"]);
+
+const HISTORIC_RELIGIOUS_SUBTYPES = new Set([
+  "church",
+  "high_cross",
+  "monastery",
+  "mosque",
+  "temple",
+  "wayside_cross",
+  "wayside_shrine"
+]);
+
+const TOURISM_ENTERTAINMENT_SUBTYPES = new Set(["aquarium", "theme_park", "zoo"]);
+const TOURISM_NATURE_SUBTYPES = new Set(["viewpoint"]);
+const TOURISM_URBAN_LANDMARK_SUBTYPES = new Set([
+  "artwork",
+  "attraction",
+  "gallery",
+  "museum"
+]);
+
+const LEISURE_NATURE_SUBTYPES = new Set(["beach_resort", "garden", "nature_reserve", "park"]);
+
+const LEISURE_ENTERTAINMENT_SUBTYPES = new Set([
+  "adult_gaming_centre",
   "amusement_arcade",
+  "dance",
+  "escape_game",
+  "ice_rink",
+  "miniature_golf",
+  "sports_centre",
+  "stadium",
   "water_park"
 ]);
 
-const NATURE_LEISURE_SUBTYPES = new Set(["park", "garden"]);
-const URBAN_LANDMARK_MAN_MADE_SUBTYPES = new Set(["tower", "bridge"]);
+const FOOD_DRINK_SHOP_SUBTYPES = new Set([
+  "alcohol",
+  "bakery",
+  "beverages",
+  "butcher",
+  "cheese",
+  "chocolate",
+  "coffee",
+  "confectionery",
+  "dairy",
+  "deli",
+  "farm",
+  "food",
+  "frozen_food",
+  "greengrocer",
+  "health_food",
+  "ice_cream",
+  "nuts",
+  "pasta",
+  "pastry",
+  "seafood",
+  "spices",
+  "tea",
+  "tortilla",
+  "water",
+  "wine"
+]);
+
+const MAN_MADE_URBAN_LANDMARK_SUBTYPES = new Set([
+  "bridge",
+  "tower",
+  "water_tower",
+  "windmill"
+]);
+
+const PLACE_URBAN_LANDMARK_SUBTYPES = new Set(["square"]);
+
+const WATERWAY_NATURE_SUBTYPES = new Set(["waterfall"]);
 
 function normalizeText(value) {
   if (typeof value !== "string") return "";
@@ -155,9 +287,14 @@ function normalizeAddressType(value) {
   return normalizeSearchText(value).replace(/\s+/g, "_");
 }
 
+function isGenericNaturalForEnrichment(osmClass, osmSubtype) {
+  return (
+    osmClass === "natural" &&
+    (!!osmSubtype ? GENERIC_NATURAL_SUBTYPES_FOR_ENRICHMENT.has(osmSubtype) : true)
+  );
+}
+
 function buildKeywordContext(input = {}) {
-  // Keep lexical fallback focused on POI-facing text only.
-  // Adding city/country creates noise and increases false positives.
   const searchBag = buildSearchBag([input.locationName, input.displayName]);
 
   return {
@@ -166,146 +303,211 @@ function buildKeywordContext(input = {}) {
   };
 }
 
-const TOURISM_ATTRACTION_KEYWORD_RULES = [
+const TOURISM_ATTRACTION_OVERRIDE_RULES = [
   {
     category: "religious",
     keywords: [
-      "church",
-      "cathedral",
+      "abbey",
       "basilica",
+      "cathedral",
+      "chapel",
+      "church",
+      "eglise",
+      "manastire",
+      "monastery",
       "mosque",
       "synagogue",
-      "temple",
-      "monastery",
-      "chapel",
-      "abbey"
-    ]
-  },
-  {
-    category: "historical",
-    keywords: [
-      "museum",
-      "gallery",
-      "muzeu",
-      "palace",
-      "castle",
-      "fort",
-      "citadel",
-      "ruins",
-      "archaeological site",
-      "historic site",
-      "monument",
-      "memorial"
+      "temple"
     ]
   },
   {
     category: "entertainment",
     keywords: [
-      "stadium",
+      "aquarium",
       "arena",
       "cinema",
-      "theatre",
+      "opera",
+      "opera house",
+      "stadium",
       "theater",
-      "zoo",
-      "aquarium",
+      "theatre",
       "theme park",
-      "amusement park"
+      "zoo"
     ]
   },
   {
-    category: "urban_landmark",
-    keywords: ["tower", "bridge", "square", "plaza", "fountain", "landmark"]
+    category: "nature",
+    keywords: [
+      "beach",
+      "forest",
+      "garden",
+      "lake",
+      "mountain",
+      "park",
+      "viewpoint",
+      "waterfall"
+    ]
   },
   {
-    category: "nature",
-    keywords: ["park", "garden", "forest", "lake", "waterfall", "beach", "mountain"]
+    category: "historical",
+    keywords: [
+      "archaeological site",
+      "castle",
+      "castel",
+      "cetate",
+      "citadel",
+      "fort",
+      "historic site",
+      "memorial",
+      "monument",
+      "ruins"
+    ]
   }
 ];
 
 const KEYWORD_RULES = [
   {
-    category: "historical",
-    keywords: [
-      "museum",
-      "gallery",
-      "muzeu",
-      "palace",
-      "castle",
-      "fort",
-      "citadel",
-      "ruins",
-      "archaeological site",
-      "historic site"
-    ]
-  },
-  {
     category: "religious",
     keywords: [
-      "church",
-      "cathedral",
+      "abbey",
       "basilica",
+      "biserica",
+      "cathedral",
+      "cathedrale",
+      "catedrala",
+      "chapel",
+      "church",
+      "eglise",
+      "manastire",
+      "monastery",
       "mosque",
+      "mosquee",
       "synagogue",
       "temple",
-      "monastery",
-      "chapel",
-      "abbey"
+      "templu"
     ]
   },
   {
     category: "food_drink",
-    keywords: ["restaurant", "cafe", "bar", "bistro", "pub", "food court"]
+    keywords: [
+      "bar",
+      "bistro",
+      "cafe",
+      "cafenea",
+      "coffee",
+      "food court",
+      "ice cream",
+      "pub",
+      "restaurant"
+    ]
   },
   {
     category: "shopping",
-    keywords: ["mall", "shopping", "market", "outlet", "shopping centre", "shopping center"]
+    keywords: [
+      "bazaar",
+      "mall",
+      "market",
+      "marketplace",
+      "outlet",
+      "shopping center",
+      "shopping centre"
+    ]
   },
   {
     category: "entertainment",
     keywords: [
-      "theme park",
-      "amusement park",
-      "stadium",
+      "aquarium",
       "arena",
       "cinema",
-      "theatre",
+      "opera",
+      "opera house",
+      "planetarium",
+      "stadium",
+      "teatru",
       "theater",
-      "zoo",
-      "aquarium"
+      "theatre",
+      "theme park",
+      "zoo"
     ]
   },
   {
     category: "nature",
     keywords: [
-      "national park",
-      "nature reserve",
-      "waterfall",
       "beach",
-      "mountain",
+      "cascade",
+      "cascada",
       "forest",
-      "lake",
+      "forêt",
       "garden",
-      "park"
+      "gradina",
+      "jardin",
+      "lake",
+      "lac",
+      "mountain",
+      "munte",
+      "nature reserve",
+      "park",
+      "parc",
+      "plage",
+      "plaja",
+      "waterfall"
     ]
   },
   {
     category: "urban_landmark",
-    keywords: ["tower", "bridge", "square", "plaza", "fountain"]
+    keywords: [
+      "artwork",
+      "bridge",
+      "fountain",
+      "gallery",
+      "galerie",
+      "landmark",
+      "musee",
+      "museum",
+      "musée",
+      "piazza",
+      "piata",
+      "plaza",
+      "pod",
+      "pont",
+      "square",
+      "tower",
+      "tour",
+      "turn"
+    ]
   },
   {
     category: "historical",
-    keywords: ["monument", "memorial"]
+    keywords: [
+      "archaeological site",
+      "castle",
+      "castel",
+      "cetate",
+      "chateau",
+      "château",
+      "citadel",
+      "citadelle",
+      "fort",
+      "historic site",
+      "manor",
+      "memorial",
+      "monument",
+      "palace",
+      "palais",
+      "palat",
+      "ruins"
+    ]
   }
 ];
 
 function classifyTourismAttraction(keywordContext) {
-  for (const rule of TOURISM_ATTRACTION_KEYWORD_RULES) {
+  for (const rule of TOURISM_ATTRACTION_OVERRIDE_RULES) {
     if (matchesAnyKeyword(keywordContext, rule.keywords)) {
       return rule.category;
     }
   }
 
-  return "other";
+  return "urban_landmark";
 }
 
 function classifyFromOsm(osmClass, osmSubtype, keywordContext) {
@@ -314,21 +516,35 @@ function classifyFromOsm(osmClass, osmSubtype, keywordContext) {
   }
 
   if (osmClass === "historic") {
+    if (HISTORIC_RELIGIOUS_SUBTYPES.has(osmSubtype)) {
+      return "religious";
+    }
+
     return "historical";
   }
 
   if (osmClass === "tourism") {
-    if (osmSubtype === "museum" || osmSubtype === "gallery") {
-      return "historical";
+    if (TOURISM_ENTERTAINMENT_SUBTYPES.has(osmSubtype)) {
+      return "entertainment";
+    }
+
+    if (TOURISM_NATURE_SUBTYPES.has(osmSubtype)) {
+      return "nature";
     }
 
     if (osmSubtype === "attraction") {
       return classifyTourismAttraction(keywordContext);
     }
+
+    if (TOURISM_URBAN_LANDMARK_SUBTYPES.has(osmSubtype)) {
+      return "urban_landmark";
+    }
+
+    return "other";
   }
 
   if (osmClass === "amenity") {
-    if (osmSubtype === "place_of_worship") {
+    if (RELIGIOUS_AMENITY_SUBTYPES.has(osmSubtype)) {
       return "religious";
     }
 
@@ -336,7 +552,7 @@ function classifyFromOsm(osmClass, osmSubtype, keywordContext) {
       return "food_drink";
     }
 
-    if (osmSubtype === "marketplace") {
+    if (SHOPPING_AMENITY_SUBTYPES.has(osmSubtype)) {
       return "shopping";
     }
 
@@ -344,9 +560,11 @@ function classifyFromOsm(osmClass, osmSubtype, keywordContext) {
       return "entertainment";
     }
 
-    if (osmSubtype === "fountain") {
+    if (URBAN_LANDMARK_AMENITY_SUBTYPES.has(osmSubtype)) {
       return "urban_landmark";
     }
+
+    return "other";
   }
 
   if (osmClass === "building") {
@@ -357,32 +575,76 @@ function classifyFromOsm(osmClass, osmSubtype, keywordContext) {
     if (HISTORICAL_BUILDING_SUBTYPES.has(osmSubtype)) {
       return "historical";
     }
-  }
 
-  if (osmClass === "natural") {
-    return "nature";
+    if (URBAN_LANDMARK_BUILDING_SUBTYPES.has(osmSubtype)) {
+      return "urban_landmark";
+    }
+
+    if (ENTERTAINMENT_BUILDING_SUBTYPES.has(osmSubtype)) {
+      return "entertainment";
+    }
+
+    if (SHOPPING_BUILDING_SUBTYPES.has(osmSubtype)) {
+      return "shopping";
+    }
+
+    return "other";
   }
 
   if (osmClass === "leisure") {
-    if (NATURE_LEISURE_SUBTYPES.has(osmSubtype)) {
+    if (LEISURE_NATURE_SUBTYPES.has(osmSubtype)) {
       return "nature";
     }
 
-    if (ENTERTAINMENT_LEISURE_SUBTYPES.has(osmSubtype)) {
+    if (LEISURE_ENTERTAINMENT_SUBTYPES.has(osmSubtype)) {
       return "entertainment";
     }
+
+    return "other";
+  }
+
+  if (osmClass === "natural") {
+    if (isGenericNaturalForEnrichment(osmClass, osmSubtype)) {
+      return "other";
+    }
+
+    return "nature";
+  }
+
+  if (osmClass === "water") {
+    return "nature";
+  }
+
+  if (osmClass === "waterway") {
+    if (WATERWAY_NATURE_SUBTYPES.has(osmSubtype)) {
+      return "nature";
+    }
+
+    return "other";
   }
 
   if (osmClass === "shop") {
+    if (FOOD_DRINK_SHOP_SUBTYPES.has(osmSubtype)) {
+      return "food_drink";
+    }
+
     return "shopping";
   }
 
-  if (osmClass === "man_made" && URBAN_LANDMARK_MAN_MADE_SUBTYPES.has(osmSubtype)) {
-    return "urban_landmark";
+  if (osmClass === "man_made") {
+    if (MAN_MADE_URBAN_LANDMARK_SUBTYPES.has(osmSubtype)) {
+      return "urban_landmark";
+    }
+
+    return "other";
   }
 
-  if (osmClass === "place" && osmSubtype === "square") {
-    return "urban_landmark";
+  if (osmClass === "place") {
+    if (PLACE_URBAN_LANDMARK_SUBTYPES.has(osmSubtype)) {
+      return "urban_landmark";
+    }
+
+    return "other";
   }
 
   return "other";
@@ -415,8 +677,6 @@ export function classifyPlaceCategory(input = {}) {
 
   const fallbackCategory = classifyFromKeywords(keywordContext);
   if (fallbackCategory !== "other") {
-    // Protection against false positives like:
-    // "Church Street", "Bridge Street", "Market Street"
     if (hasAddressLikeType(addressType)) {
       return "other";
     }
@@ -439,11 +699,12 @@ export function shouldEnrichPlaceCategory(input = {}) {
   }
 
   const fallbackCategory = classifyFromKeywords(keywordContext);
-  const ambiguousOsmClass = !osmClass || GENERIC_OSM_CLASSES_FOR_ENRICHMENT.has(osmClass);
+  const ambiguousOsmClass =
+    !osmClass ||
+    GENERIC_OSM_CLASSES_FOR_ENRICHMENT.has(osmClass) ||
+    isGenericNaturalForEnrichment(osmClass, osmSubtype);
   const addressLikeType = hasAddressLikeType(addressType);
 
-  // Enrichment only for ambiguous/address-like results that still remained "other"
-  // after lexical fallback.
   return (ambiguousOsmClass || addressLikeType) && fallbackCategory === "other";
 }
 

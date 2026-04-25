@@ -150,4 +150,8 @@ export const postIdParamsSchema = z.object({
     .trim()
     .regex(/^[1-9]\d*$/, "id must be a positive integer")
     .transform((v) => Number(v))
+    .refine(
+      (v) => Number.isSafeInteger(v) && v <= 2147483647,
+      "id is too large"
+    )
 });
