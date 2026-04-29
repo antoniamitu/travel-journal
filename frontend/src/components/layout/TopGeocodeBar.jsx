@@ -21,7 +21,8 @@ export default function TopGeocodeBar({ onSelectPlace }) {
   const [activeIndex, setActiveIndex] = useState(-1);
 
   const abortRef = useRef(null);
-  const skipNextSearchRef = useRef(false);
+  const suppressSearchForQueryRef = useRef("");
+  const requestIdRef = useRef(0);
 
   const wrapRef = useRef(null);
   const inputRef = useRef(null);
@@ -54,17 +55,18 @@ export default function TopGeocodeBar({ onSelectPlace }) {
 
   function clearSearch() {
     // ✅ bulletproof: don't let a previous select block the next debounced search
-    skipNextSearchRef.current = false;
+    suppressSearchForQueryRef.current = "";
+    requestIdRef.current += 1;
 
     // cancel in-flight request
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = null;
 
-    // reset only input + dropdown UI (Variant A)
     setQuery("");
     setItems([]);
     setError("");
     setHasSearched(false);
+    setIsLoading(false);
     closeDropdown();
 
     requestAnimationFrame(() => inputRef.current?.focus());
@@ -72,27 +74,44 @@ export default function TopGeocodeBar({ onSelectPlace }) {
 
   function handleSelect(item) {
     // Prevent immediate re-search for the programmatic query set
-    skipNextSearchRef.current = true;
+    const selectedLabel = getDisplayLabel(item);
+
+    // Prevent only the programmatic query from triggering a new search.
+    // Do not suppress a different query typed manually right after selection.
+    suppressSearchForQueryRef.current = selectedLabel.trim();
+    requestIdRef.current += 1;
 
     // cancel in-flight request
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = null;
 
-    setQuery(getDisplayLabel(item));
+    setQuery(selectedLabel);
     setItems([]);
     setError("");
     setHasSearched(false);
+    setIsLoading(false);
     closeDropdown();
 
     onSelectPlace?.(item);
   }
 
-  // ✅ Search effect runs ONLY when debounced value changes
   useEffect(() => {
-    if (skipNextSearchRef.current) {
-      skipNextSearchRef.current = false;
-      return;
+    const suppressedQuery = suppressSearchForQueryRef.current;
+    if (suppressedQuery) {
+      if (debouncedTrimmed === suppressedQuery) {
+        suppressSearchForQueryRef.current = "";
+        setItems([]);
+        setError("");
+        setHasSearched(false);
+        setIsLoading(false);
+        closeDropdown();
+        return;
+      }
+
+      suppressSearchForQueryRef.current = "";
     }
+
+    const requestId = (requestIdRef.current += 1);
 
     if (!canSearch) {
       setItems([]);
@@ -103,14 +122,16 @@ export default function TopGeocodeBar({ onSelectPlace }) {
       abortRef.current = null;
 
       closeDropdown();
+      setIsLoading(false);
       return;
     }
 
     openDropdown();
 
-    // abort previous & start new
     if (abortRef.current) abortRef.current.abort();
-    abortRef.current = new AbortController();
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     setIsLoading(true);
     setError("");
@@ -121,8 +142,12 @@ export default function TopGeocodeBar({ onSelectPlace }) {
         const res = await api.post(
           "/geocode/search",
           { query: debouncedTrimmed },
-          { timeout: 15000, signal: abortRef.current.signal }
+          { timeout: 15000, signal: controller.signal }
         );
+
+        if (requestId !== requestIdRef.current) {
+          return;
+        }
 
         const results = Array.isArray(res?.data?.results) ? res.data.results : [];
         setItems(results);
@@ -136,6 +161,10 @@ export default function TopGeocodeBar({ onSelectPlace }) {
           return;
         }
 
+        if (requestId !== requestIdRef.current) {
+          return;
+        }
+
         const status = err?.response?.status;
         const message = err?.response?.data?.message;
 
@@ -146,12 +175,22 @@ export default function TopGeocodeBar({ onSelectPlace }) {
         setItems([]);
         setActiveIndex(-1);
       } finally {
-        setIsLoading(false);
+        if (requestId === requestIdRef.current) {
+          setIsLoading(false);
+        }
+
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+        }
       }
     })();
 
     return () => {
-      if (abortRef.current) abortRef.current.abort();
+      controller.abort();
+
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
     };
   }, [debouncedTrimmed, canSearch]);
 

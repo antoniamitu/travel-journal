@@ -1,5 +1,6 @@
 // frontend/src/pages/PostDetailPage.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { MapContainer, Marker, TileLayer } from "react-leaflet";
@@ -13,6 +14,12 @@ import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 
+import {
+  buildCloudinarySrcSet,
+  makeCloudinaryOptimizer
+} from "../utils/cloudinaryImage.js";
+import { getPlaceCategoryUi } from "../utils/placeCategoryUi.js";
+
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: markerIcon2x,
@@ -24,7 +31,7 @@ const TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const TILE_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
-const CLOUDINARY_UPLOAD_SEGMENT = "/upload/";
+
 const LIGHTBOX_SWIPE_THRESHOLD_PX = 56;
 
 function formatDate(value) {
@@ -69,62 +76,11 @@ function getPrivacyUi(privacy) {
   };
 }
 
-const PLACE_CATEGORY_UI = {
-  historical: {
-    label: "Historical",
-    icon: "🏛️",
-    badge: "bg-stone-100 text-stone-700 ring-stone-200"
-  },
-  religious: {
-    label: "Religious",
-    icon: "🕍",
-    badge: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200"
-  },
-  nature: {
-    label: "Nature",
-    icon: "🌿",
-    badge: "bg-green-50 text-green-700 ring-green-200"
-  },
-  entertainment: {
-    label: "Entertainment",
-    icon: "🎭",
-    badge: "bg-indigo-50 text-indigo-700 ring-indigo-200"
-  },
-  food_drink: {
-    label: "Food & Drink",
-    icon: "🍽️",
-    badge: "bg-orange-50 text-orange-700 ring-orange-200"
-  },
-  shopping: {
-    label: "Shopping",
-    icon: "🛍️",
-    badge: "bg-pink-50 text-pink-700 ring-pink-200"
-  },
-  urban_landmark: {
-    label: "Urban Landmark",
-    icon: "🏙️",
-    badge: "bg-cyan-50 text-cyan-700 ring-cyan-200"
-  },
-  other: {
-    label: "Other",
-    icon: "📍",
-    badge: "bg-slate-100 text-slate-700 ring-slate-200"
-  }
-};
-
-function normalizePlaceCategory(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  return Object.prototype.hasOwnProperty.call(PLACE_CATEGORY_UI, normalized) ? normalized : "other";
-}
-
-function getPlaceCategoryUi(category) {
-  return PLACE_CATEGORY_UI[normalizePlaceCategory(category)] || PLACE_CATEGORY_UI.other;
-}
-
 function normalizeVerificationConfidence(value) {
-  if (!Number.isFinite(value)) return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
 
-  const normalized = value >= 0 && value <= 1 ? value * 100 : value;
+  const normalized = numeric >= 0 && numeric <= 1 ? numeric * 100 : numeric;
   return Math.round(normalized);
 }
 
@@ -159,79 +115,15 @@ function getPhotoVerificationUi(photoVerification) {
   return null;
 }
 
-function isCloudinaryUrl(url) {
-  return typeof url === "string" && url.includes(CLOUDINARY_UPLOAD_SEGMENT);
-}
-
-function injectCloudinaryTransform(url, transform) {
-  if (!isCloudinaryUrl(url)) return url;
-  return url.replace(CLOUDINARY_UPLOAD_SEGMENT, `${CLOUDINARY_UPLOAD_SEGMENT}${transform}/`);
-}
-
-function optimizeCloudinaryUrl(secureUrl, variant = "full") {
-  if (!isCloudinaryUrl(secureUrl)) {
-    return secureUrl;
-  }
-
-  switch (variant) {
-    case "thumb":
-      return injectCloudinaryTransform(
-        secureUrl,
-        "c_fill,g_auto,w_900,h_560,f_auto,q_auto"
-      );
-    case "detail":
-      return injectCloudinaryTransform(
-        secureUrl,
-        "c_limit,w_1440,f_auto,q_auto"
-      );
-    case "lightbox":
-      return injectCloudinaryTransform(
-        secureUrl,
-        "c_limit,w_2000,f_auto,q_auto"
-      );
-    default:
-      return injectCloudinaryTransform(
-        secureUrl,
-        "c_limit,w_1600,f_auto,q_auto"
-      );
-  }
-}
-
-function buildCloudinarySrcSet(secureUrl, options) {
-  if (!isCloudinaryUrl(secureUrl)) return undefined;
-
-  const {
-    widths = [],
-    crop = "limit",
-    gravity = "auto",
-    height,
-    quality = "auto",
-    format = "auto"
-  } = options || {};
-
-  const normalizedWidths = Array.from(
-    new Set(widths.filter((value) => Number.isFinite(value) && value > 0))
-  ).sort((a, b) => a - b);
-
-  if (!normalizedWidths.length) return undefined;
-
-  return normalizedWidths
-    .map((width) => {
-      const parts = [`c_${crop}`, `w_${width}`];
-
-      if (crop === "fill") {
-        parts.push(`g_${gravity}`);
-      }
-
-      if (Number.isFinite(height) && height > 0) {
-        parts.push(`h_${height}`);
-      }
-
-      parts.push(`f_${format}`, `q_${quality}`);
-      return `${injectCloudinaryTransform(secureUrl, parts.join(","))} ${width}w`;
-    })
-    .join(", ");
-}
+const optimizeCloudinaryUrl = makeCloudinaryOptimizer(
+  {
+    thumb: "c_fill,g_auto,w_900,h_560,f_auto,q_auto",
+    detail: "c_limit,w_1440,f_auto,q_auto",
+    lightbox: "c_limit,w_2000,f_auto,q_auto",
+    full: "c_limit,w_1600,f_auto,q_auto"
+  },
+  "full"
+);
 
 function getThumbSizes(imageCount) {
   if (imageCount <= 1) {
@@ -316,45 +208,74 @@ function Lightbox({ images, currentIndex, onClose, onPrev, onNext, title }) {
   const touchStartXRef = useRef(null);
   const touchDeltaXRef = useRef(0);
 
+  const onCloseRef = useRef(onClose);
+  const onPrevRef = useRef(onPrev);
+  const onNextRef = useRef(onNext);
+
   useEffect(() => {
-    if (currentIndex < 0) return undefined;
+    onCloseRef.current = onClose;
+    onPrevRef.current = onPrev;
+    onNextRef.current = onNext;
+  }, [onClose, onPrev, onNext]);
+
+  const activeImage =
+  currentIndex >= 0 && Array.isArray(images) ? images[currentIndex] : null;
+
+  const isLightboxOpen = Boolean(activeImage);
+
+  useEffect(() => {
+    if (!isLightboxOpen) return undefined;
 
     const previousOverflow = document.body.style.overflow;
+    const previousPaddingRight = document.body.style.paddingRight;
+
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    const currentPaddingRight =
+      Number.parseFloat(window.getComputedStyle(document.body).paddingRight) || 0;
+
     document.body.style.overflow = "hidden";
+
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${currentPaddingRight + scrollbarWidth}px`;
+    }
 
     const onKeyDown = (e) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose?.();
+        onCloseRef.current?.();
         return;
       }
 
       if (e.key === "ArrowLeft") {
         e.preventDefault();
-        onPrev?.();
+        onPrevRef.current?.();
         return;
       }
 
       if (e.key === "ArrowRight") {
         e.preventDefault();
-        onNext?.();
+        onNextRef.current?.();
       }
     };
 
     document.addEventListener("keydown", onKeyDown);
-    requestAnimationFrame(() => dialogRef.current?.focus());
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      dialogRef.current?.focus();
+    });
 
     return () => {
+      window.cancelAnimationFrame(focusFrame);
       document.body.style.overflow = previousOverflow;
+      document.body.style.paddingRight = previousPaddingRight;
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [currentIndex, onClose, onPrev, onNext]);
+  }, [isLightboxOpen]);
 
-  if (currentIndex < 0 || !Array.isArray(images) || !images[currentIndex]) {
-    return null;
-  }
+  if (!activeImage) return null;
+  if (typeof document === "undefined") return null;
 
-  const image = images[currentIndex];
+  const image = activeImage;
   const alt = title ? `${title} image ${currentIndex + 1}` : `Post image ${currentIndex + 1}`;
   const srcSet = buildCloudinarySrcSet(image.secureUrl, {
     widths: [640, 960, 1280, 1600, 2000],
@@ -390,9 +311,9 @@ function Lightbox({ images, currentIndex, onClose, onPrev, onNext, title }) {
     }
   }
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/90 px-3 py-4 sm:px-4 sm:py-6"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 px-3 py-4 sm:px-4 sm:py-6"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) {
           onClose?.();
@@ -462,7 +383,8 @@ function Lightbox({ images, currentIndex, onClose, onPrev, onNext, title }) {
           {currentIndex + 1} / {images.length}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -511,13 +433,18 @@ export default function PostDetailPage() {
 
     async function loadPost() {
       setStatus("loading");
-
-      try {
-        const nextPost = await getPostById(id, {
+          try {
+          const nextPost = await getPostById(id, {
           signal: abortController.signal
         });
 
         if (cancelled) return;
+
+        if (!nextPost) {
+          setStatus("notfound");
+          return;
+        }
+
         setPost(nextPost);
         setStatus("ready");
       } catch (err) {
@@ -566,11 +493,13 @@ export default function PostDetailPage() {
     if (!post?.id || isDeleting) return;
 
     setIsDeleting(true);
+    let didNavigate = false;
 
     try {
       await deletePostById(post.id);
       toast.success("Post deleted successfully.");
       setDeleteOpen(false);
+      didNavigate = true;
       navigate("/map", { replace: true });
     } catch (err) {
       const httpStatus = err?.response?.status;
@@ -579,13 +508,16 @@ export default function PostDetailPage() {
       if (httpStatus === 404) {
         toast.error("This post doesn't exist or has already been deleted.");
         setDeleteOpen(false);
+        didNavigate = true;
         navigate("/map", { replace: true });
         return;
       }
 
       toast.error(message || "Failed to delete post. Please try again.");
     } finally {
-      setIsDeleting(false);
+        if (!didNavigate) {
+          setIsDeleting(false);
+        }
     }
   }
 
@@ -612,6 +544,15 @@ export default function PostDetailPage() {
   }
 
   const images = Array.isArray(post?.images) ? post.images.filter((img) => img?.secureUrl) : [];
+  const lat = Number(post?.latitude);
+  const lng = Number(post?.longitude);
+  const hasValidCoordinates =
+  Number.isFinite(lat) &&
+  Number.isFinite(lng) &&
+  lat >= -90 &&
+  lat <= 90 &&
+  lng >= -180 &&
+  lng <= 180;
   const hasImages = images.length > 0;
   const storySectionTitle = getStorySectionTitle(post);
 
@@ -759,40 +700,26 @@ export default function PostDetailPage() {
                 </div>
 
                 <div className="relative z-0 h-[300px] overflow-hidden sm:h-[320px]">
+                {hasValidCoordinates ? (
                   <MapContainer
-                    center={[post.latitude, post.longitude]}
+                    center={[lat, lng]}
                     zoom={13}
                     scrollWheelZoom
                     className="h-full w-full"
                   >
                     <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />
-                    <Marker position={[post.latitude, post.longitude]} />
+                    <Marker position={[lat, lng]} />
                   </MapContainer>
-                </div>
+                ) : (
+                  <div className="flex h-full items-center justify-center bg-slate-100 px-4 text-center text-sm text-slate-500">
+                    Map unavailable for this post because the saved coordinates are invalid.
+                  </div>
+                )}
+              </div>
 
-                <div className="px-5 py-4 text-sm text-slate-600 sm:px-6">
-                  {Number(post.latitude).toFixed(5)}, {Number(post.longitude).toFixed(5)}
-                </div>
-              </section>
-
-              <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-                <div className="text-base font-semibold text-slate-900">Actions</div>
-
-                <div className="mt-4 flex flex-col gap-3">
-                  <Link
-                    to="/map"
-                    className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
-                  >
-                    Back to Map
-                  </Link>
-
-                  <Link
-                    to="/feed"
-                    className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    Go to Feed
-                  </Link>
-                </div>
+              <div className="px-5 py-4 text-sm text-slate-600 sm:px-6">
+                {hasValidCoordinates ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "Coordinates unavailable"}
+              </div>
               </section>
             </aside>
           </div>

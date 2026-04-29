@@ -4,14 +4,10 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { getUserProfileByUsername } from "../api/users.js";
 import { useAuth } from "../hooks/useAuth.js";
 import { formatSentimentScore, getSentimentUi } from "../utils/sentimentUi.js";
+import { getPlaceCategoryUi } from "../utils/placeCategoryUi.js";
+import { makeCloudinaryOptimizer } from "../utils/cloudinaryImage.js";
 
 const DEFAULT_PAGE_SIZE = 20;
-const SENTIMENT_OPTIONS = [
-  { key: "all", label: "All" },
-  { key: "positive", label: "Positive" },
-  { key: "neutral", label: "Neutral" },
-  { key: "negative", label: "Negative" }
-];
 
 const DEFAULT_PROFILE_STATS = {
   totalPosts: 0,
@@ -46,18 +42,13 @@ function formatPostDate(value) {
   }).format(date);
 }
 
-function optimizeCloudinaryUrl(secureUrl, variant = "card") {
-  if (typeof secureUrl !== "string" || !secureUrl.includes("/upload/")) {
-    return secureUrl || "";
-  }
-
-  const transform =
-    variant === "thumb"
-      ? "c_fill,w_900,h_560,g_auto,f_auto,q_auto"
-      : "c_fill,w_1400,h_900,g_auto,f_auto,q_auto";
-
-  return secureUrl.replace("/upload/", `/upload/${transform}/`);
-}
+const optimizeCloudinaryUrl = makeCloudinaryOptimizer(
+  {
+    thumb: "c_fill,w_900,h_560,g_auto,f_auto,q_auto",
+    card: "c_fill,w_1400,h_900,g_auto,f_auto,q_auto"
+  },
+  "card"
+);
 
 function getAvatarInitials(user) {
   const source = String(user?.username || "U").trim();
@@ -97,6 +88,24 @@ function getPostLocation(post) {
   return post?.locationName || "Unknown location";
 }
 
+function mergeUniquePostsById(existing, incoming) {
+  const map = new Map();
+
+  for (const post of existing) {
+    if (post?.id != null) {
+      map.set(post.id, post);
+    }
+  }
+
+  for (const post of incoming) {
+    if (post?.id != null) {
+      map.set(post.id, post);
+    }
+  }
+
+  return Array.from(map.values());
+}
+
 
 function getPrivacyUi(privacy) {
   if (privacy === "private") {
@@ -110,58 +119,6 @@ function getPrivacyUi(privacy) {
     label: "Public",
     shell: "bg-sky-50 text-sky-700 ring-sky-200"
   };
-}
-
-const PLACE_CATEGORY_UI = {
-  historical: {
-    label: "Historical",
-    icon: "🏛️",
-    shell: "bg-stone-100 text-stone-700 ring-stone-200"
-  },
-  religious: {
-    label: "Religious",
-    icon: "🕍",
-    shell: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200"
-  },
-  nature: {
-    label: "Nature",
-    icon: "🌿",
-    shell: "bg-green-50 text-green-700 ring-green-200"
-  },
-  entertainment: {
-    label: "Entertainment",
-    icon: "🎭",
-    shell: "bg-indigo-50 text-indigo-700 ring-indigo-200"
-  },
-  food_drink: {
-    label: "Food & Drink",
-    icon: "🍽️",
-    shell: "bg-orange-50 text-orange-700 ring-orange-200"
-  },
-  shopping: {
-    label: "Shopping",
-    icon: "🛍️",
-    shell: "bg-pink-50 text-pink-700 ring-pink-200"
-  },
-  urban_landmark: {
-    label: "Urban Landmark",
-    icon: "🏙️",
-    shell: "bg-cyan-50 text-cyan-700 ring-cyan-200"
-  },
-  other: {
-    label: "Other",
-    icon: "📍",
-    shell: "bg-slate-100 text-slate-700 ring-slate-200"
-  }
-};
-
-function normalizePlaceCategory(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  return Object.prototype.hasOwnProperty.call(PLACE_CATEGORY_UI, normalized) ? normalized : "other";
-}
-
-function getPlaceCategoryUi(category) {
-  return PLACE_CATEGORY_UI[normalizePlaceCategory(category)] || PLACE_CATEGORY_UI.other;
 }
 
 function UserProfileLoadingSkeleton() {
@@ -240,16 +197,13 @@ function UserProfileErrorState({ title, message }) {
   );
 }
 
-function EmptyPostsState({ sentimentFilter }) {
-  const label =
-    sentimentFilter === "all"
-      ? "This user doesn't have any visible posts yet."
-      : `No ${sentimentFilter} posts are visible right now.`;
-
+function EmptyPostsState() {
   return (
     <div className="rounded-[28px] border border-dashed border-slate-300 bg-white px-6 py-10 text-center shadow-sm">
       <h2 className="text-2xl font-semibold text-slate-900">No posts to show</h2>
-      <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-600">{label}</p>
+      <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+        This traveler doesn&apos;t have any visible memories yet.
+      </p>
     </div>
   );
 }
@@ -337,46 +291,7 @@ function ProfileOverviewCards({ stats }) {
   );
 }
 
-function SentimentFilters({ value, onChange }) {
-  return (
-    <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm lg:p-7">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <div className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
-            Filters
-          </div>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
-            Filter by sentiment
-          </h2>
-        </div>
-
-        <div className="flex flex-wrap gap-3">
-          {SENTIMENT_OPTIONS.map((option) => {
-            const active = value === option.key;
-
-            return (
-              <button
-                key={option.key}
-                type="button"
-                onClick={() => onChange(option.key)}
-                className={[
-                  "inline-flex min-h-11 items-center justify-center rounded-2xl px-4 py-2.5 text-sm font-semibold transition",
-                  active
-                    ? "bg-emerald-600 text-white shadow-sm"
-                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                ].join(" ")}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function UserPostCard({ post }) {
+const UserPostCard = React.memo(function UserPostCard({ post }) {
   const imageUrl = getPreviewImage(post);
   const sentimentUi = getSentimentUi(post?.sentiment, post?.sentimentScore, "profile");
   const privacyUi = getPrivacyUi(post?.privacy);
@@ -393,8 +308,9 @@ function UserPostCard({ post }) {
             <img
               src={optimizeCloudinaryUrl(imageUrl, "thumb")}
               alt={post?.title || "Post preview"}
-              className="h-52 w-full object-cover transition duration-300 hover:scale-[1.02]"
+              className="h-52 w-full object-cover transition duration-300 group-hover:scale-[1.02]"
               loading="lazy"
+              decoding="async"
             />
           ) : (
             <div className="flex h-52 items-center justify-center bg-slate-100 px-4 text-center text-sm text-slate-500">
@@ -440,7 +356,7 @@ function UserPostCard({ post }) {
       </Link>
     </article>
   );
-}
+});
 
 export default function UserProfilePage() {
   const navigate = useNavigate();
@@ -452,7 +368,7 @@ export default function UserProfilePage() {
   const [posts, setPosts] = useState([]);
   const [stats, setStats] = useState(DEFAULT_PROFILE_STATS);
   const [total, setTotal] = useState(0);
-  const [sentimentFilter, setSentimentFilter] = useState("all");
+
   const [currentPage, setCurrentPage] = useState(1);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [errorState, setErrorState] = useState({ title: "", message: "" });
@@ -475,7 +391,7 @@ export default function UserProfilePage() {
   }, [posts.length]);
 
   const loadPage = useCallback(
-    async (pageToLoad, { append = false, nextSentiment = sentimentFilter } = {}) => {
+    async (pageToLoad, { append = false } = {}) => {
       if (requestAbortRef.current) {
         requestAbortRef.current.abort();
       }
@@ -498,8 +414,7 @@ export default function UserProfilePage() {
           username,
           {
             page: pageToLoad,
-            limit: DEFAULT_PAGE_SIZE,
-            ...(nextSentiment !== "all" ? { sentiment: nextSentiment } : {})
+            limit: DEFAULT_PAGE_SIZE
           },
           {
             signal: controller.signal,
@@ -516,7 +431,7 @@ export default function UserProfilePage() {
         setProfileUser(data?.user ?? null);
         setStats(data?.stats ?? DEFAULT_PROFILE_STATS);
         setTotal(Number.isFinite(Number(data?.total)) ? Number(data.total) : 0);
-        setPosts((prev) => (append ? [...prev, ...nextPosts] : nextPosts));
+        setPosts((prev) => (append ? mergeUniquePostsById(prev, nextPosts) : nextPosts));
         setCurrentPage(pageToLoad);
         setStatus("ready");
       } catch (err) {
@@ -528,6 +443,8 @@ export default function UserProfilePage() {
           return;
         }
 
+        if (requestId !== requestIdRef.current) return;
+
         const httpStatus = err?.response?.status;
         const nextMessage =
           httpStatus === 404
@@ -536,13 +453,13 @@ export default function UserProfilePage() {
               ? "We couldn't load this user profile. Please check your connection and try again."
               : err?.response?.data?.message || "Unable to load this user profile right now.";
 
-        if (append && postsLengthRef.current > 0) {
-          setPageError(nextMessage);
+        if (httpStatus === 401 || httpStatus === 403) {
+          navigate("/login", { replace: true });
           return;
         }
 
-        if (httpStatus === 401 || httpStatus === 403) {
-          navigate("/login", { replace: true });
+        if (append && postsLengthRef.current > 0) {
+          setPageError(nextMessage);
           return;
         }
 
@@ -574,30 +491,27 @@ export default function UserProfilePage() {
         }
       }
     },
-    [navigate, sentimentFilter, username]
+    [navigate, username]
   );
 
   useEffect(() => {
     setPosts([]);
     setTotal(0);
     setCurrentPage(1);
-    loadPage(1, { append: false, nextSentiment: sentimentFilter });
+    loadPage(1, { append: false });
 
     return () => {
       if (requestAbortRef.current) {
         requestAbortRef.current.abort();
       }
     };
-  }, [loadPage, sentimentFilter, username]);
+  }, [loadPage, username]);
 
-  const handleFilterChange = useCallback((nextFilter) => {
-    setSentimentFilter(nextFilter);
-  }, []);
 
-  const handleLoadMore = useCallback(() => {
+ const handleLoadMore = useCallback(() => {
     if (isLoadingMore || status === "loading" || !hasMore) return;
-    loadPage(currentPage + 1, { append: true, nextSentiment: sentimentFilter });
-  }, [currentPage, hasMore, isLoadingMore, status, loadPage, sentimentFilter]);
+    loadPage(currentPage + 1, { append: true });
+  }, [currentPage, hasMore, isLoadingMore, status, loadPage]);
 
   if (status === "loading") {
     return <UserProfileLoadingSkeleton />;
@@ -611,10 +525,6 @@ export default function UserProfilePage() {
     <div className="min-h-full bg-slate-100">
       <div className="mx-auto max-w-7xl px-4 py-5 lg:px-6 lg:py-6">
         <UserProfileHero user={profileUser} isSelf={isSelf} stats={stats} />
-
-        <div className="mt-6">
-          <SentimentFilters value={sentimentFilter} onChange={handleFilterChange} />
-        </div>
 
         <ProfileOverviewCards stats={stats} />
 
@@ -631,21 +541,6 @@ export default function UserProfilePage() {
                 Showing {posts.length} of {total} visible post{total === 1 ? "" : "s"}.
               </p>
             </div>
-
-            <div className="flex flex-wrap gap-3">
-              <Link
-                to="/feed"
-                className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-              >
-                Back to Feed
-              </Link>
-              <Link
-                to="/map"
-                className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
-              >
-                Explore Map
-              </Link>
-            </div>
           </div>
 
           {pageError ? (
@@ -656,7 +551,7 @@ export default function UserProfilePage() {
           ) : null}
 
           {posts.length === 0 ? (
-            <EmptyPostsState sentimentFilter={sentimentFilter} />
+            <EmptyPostsState />
           ) : (
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {posts.map((post) => (

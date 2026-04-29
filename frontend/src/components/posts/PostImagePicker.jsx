@@ -46,7 +46,7 @@ function StatusOverlay({ item, onRetry, disabled }) {
 }
 
 export default function PostImagePicker({
-  items,
+  items = [],
   maxCount = 6,
   onFilesSelected,
   onRequestRemove,
@@ -58,7 +58,8 @@ export default function PostImagePicker({
   const galleryInputRef = useRef(null);
   const cameraInputRef = useRef(null);
 
-  const count = Array.isArray(items) ? items.length : 0;
+  const safeItems = Array.isArray(items) ? items.filter(Boolean) : [];
+  const count = safeItems.length;
   const canAddMore = count < maxCount;
 
   function openGalleryPicker() {
@@ -149,13 +150,13 @@ export default function PostImagePicker({
       </div>
 
       <div className="mt-4 flex flex-wrap gap-3">
-        {items.map((item, index) => {
+        {safeItems.map((item, index) => {
           const src = item.previewUrl || item.secureUrl || "";
           const label = item.fileName || `Photo ${index + 1}`;
 
           return (
             <div
-              key={item.localId}
+              key={item.localId || item.id || item.publicId || `${src}-${index}`}
               className="group relative h-[118px] w-[118px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-sm"
             >
               {src ? (
@@ -190,7 +191,7 @@ export default function PostImagePicker({
           );
         })}
 
-        {canAddMore && (
+        {canAddMore && safeItems.length > 0 && (
           <button
             type="button"
             disabled={disabled}

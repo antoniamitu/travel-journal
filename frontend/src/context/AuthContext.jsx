@@ -3,6 +3,7 @@ import React, { createContext, useCallback, useEffect, useMemo, useRef, useState
 import toast from "react-hot-toast";
 import { api } from "../api/axios.js";
 import { LS_TOKEN_KEY, LS_USER_KEY } from "../constants/storage.js";
+import { getStorageItem, removeStorageItem, setStorageItem } from "../utils/safeStorage.js";
 
 export const AuthContext = createContext(null);
 
@@ -20,26 +21,47 @@ function isUnauthorizedError(error) {
   return error?.response?.status === 401;
 }
 
+function getAuthRequestPath(error) {
+  const rawUrl = String(error?.config?.url || "");
+
+  try {
+    const parsed = new URL(rawUrl, "http://local");
+    return parsed.pathname.replace(/^\/api(?=\/)/, "");
+  } catch {
+    return rawUrl.split("?")[0].replace(/^\/api(?=\/)/, "");
+  }
+}
+
+function shouldSkipGlobalUnauthorizedReset(error) {
+  const path = getAuthRequestPath(error);
+
+  return (
+    path === "/auth/login" ||
+    path === "/auth/register" ||
+    path === "/auth/me"
+  );
+}
+
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem(LS_TOKEN_KEY) || "");
-  const [user, setUser] = useState(() => safeParseJson(localStorage.getItem(LS_USER_KEY)));
+  const [token, setToken] = useState(() => getStorageItem(LS_TOKEN_KEY) || "");
+  const [user, setUser] = useState(() => safeParseJson(getStorageItem(LS_USER_KEY)));
   const [isInitializing, setIsInitializing] = useState(true);
 
   const isLoggingOutRef = useRef(false);
   const lastSessionToastAtRef = useRef(0);
 
   const persistAuth = useCallback((nextToken, nextUser) => {
-    if (nextToken) {
-      localStorage.setItem(LS_TOKEN_KEY, nextToken);
-    } else {
-      localStorage.removeItem(LS_TOKEN_KEY);
-    }
+  if (nextToken) {
+    setStorageItem(LS_TOKEN_KEY, nextToken);
+  } else {
+    removeStorageItem(LS_TOKEN_KEY);
+  }
 
-    if (nextUser) {
-      localStorage.setItem(LS_USER_KEY, JSON.stringify(nextUser));
-    } else {
-      localStorage.removeItem(LS_USER_KEY);
-    }
+  if (nextUser) {
+    setStorageItem(LS_USER_KEY, JSON.stringify(nextUser));
+  } else {
+    removeStorageItem(LS_USER_KEY);
+  }
   }, []);
 
   const clearAuthState = useCallback(() => {
@@ -143,8 +165,8 @@ useEffect(() => {
 
   async function init() {
     try {
-      const existingToken = localStorage.getItem(LS_TOKEN_KEY) || "";
-      const cachedUser = safeParseJson(localStorage.getItem(LS_USER_KEY));
+      const existingToken = getStorageItem(LS_TOKEN_KEY) || "";
+      const cachedUser = safeParseJson(getStorageItem(LS_USER_KEY));
 
       if (!existingToken) {
         if (!cancelled) {
@@ -211,8 +233,8 @@ useEffect(() => {
     function onStorage(e) {
       if (e.key !== LS_TOKEN_KEY && e.key !== LS_USER_KEY) return;
 
-      const nextToken = localStorage.getItem(LS_TOKEN_KEY) || "";
-      const nextUser = safeParseJson(localStorage.getItem(LS_USER_KEY));
+      const nextToken = getStorageItem(LS_TOKEN_KEY) || "";
+      const nextUser = safeParseJson(getStorageItem(LS_USER_KEY));
 
       setToken(nextToken);
       setUser(nextUser);
@@ -226,9 +248,13 @@ useEffect(() => {
     const interceptorId = api.interceptors.response.use(
       (response) => response,
       async (error) => {
-        const currentToken = localStorage.getItem(LS_TOKEN_KEY);
-
-        if (isUnauthorizedError(error) && currentToken && !isLoggingOutRef.current) {
+        const currentToken = getStorageItem(LS_TOKEN_KEY);
+        if (
+          isUnauthorizedError(error) &&
+          currentToken &&
+          !isLoggingOutRef.current &&
+          !shouldSkipGlobalUnauthorizedReset(error)
+        ) {
           forceSessionReset();
         }
 

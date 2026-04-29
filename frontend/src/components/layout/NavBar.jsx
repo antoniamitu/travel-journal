@@ -6,6 +6,7 @@ import { api } from "../../api/axios.js";
 import { searchAccounts } from "../../api/users.js";
 import { useAuth } from "../../hooks/useAuth.js";
 import { useLocationContext } from "../../hooks/useLocationContext.js";
+import { isKnownPlaceCategory } from "../../utils/placeCategoryUi.js";
 
 const SEARCH_DEBOUNCE_MS = 500;
 const SEARCH_PREFLIGHT_TIMEOUT_MS = 4000;
@@ -15,18 +16,6 @@ const MAX_SUGGESTIONS = 5;
 const COMBINING_MARKS_RE = /[\u0300-\u036f]/g;
 const NON_ALPHANUMERIC_RE = /[^a-z0-9]+/g;
 
-function getAvatarInitials(user) {
-  const source = String(user?.username || user?.email || "A").trim();
-  if (!source) return "A";
-
-  const parts = source.replace(/[@._-]+/g, " ").split(/\s+/).filter(Boolean);
-
-  if (parts.length >= 2) {
-    return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
-  }
-
-  return source.slice(0, 2).toUpperCase();
-}
 
 function normalizeLooseSearchKey(value) {
   if (typeof value !== "string") return "";
@@ -61,27 +50,24 @@ function getFeedSearchFromLocation(location) {
 }
 
 function getCurrentFeedSentiment(location) {
+  if (location.pathname !== "/feed") {
+    return "";
+  }
+
   const params = new URLSearchParams(location.search);
   const sentiment = String(params.get("sentiment") || "").trim().toLowerCase();
   return ["positive", "neutral", "negative"].includes(sentiment) ? sentiment : "";
 }
 
 function getCurrentFeedCategory(location) {
+  if (location.pathname !== "/feed") {
+    return "";
+  }
+
   const params = new URLSearchParams(location.search);
   const category = String(params.get("category") || "").trim().toLowerCase();
 
-  return [
-    "historical",
-    "religious",
-    "nature",
-    "entertainment",
-    "food_drink",
-    "shopping",
-    "urban_landmark",
-    "other"
-  ].includes(category)
-    ? category
-    : "";
+  return isKnownPlaceCategory(category) ? category : "";
 }
 
 function buildFeedSearchUrl(query, currentLocation) {
@@ -120,6 +106,74 @@ function pickFirstValidGeocodeResult(results) {
   return (
     results.find((item) => Number.isFinite(Number(item?.lat)) && Number.isFinite(Number(item?.lng))) ||
     null
+  );
+}
+
+function BrandPinIcon({ className = "h-7 w-7" }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      stroke="currentColor"
+      strokeWidth="2.1"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 21s7-4.35 7-11a7 7 0 1 0-14 0c0 6.65 7 11 7 11Z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </svg>
+  );
+}
+
+function SearchIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="11" cy="11" r="7" />
+      <path d="M20 20l-3.5-3.5" />
+    </svg>
+  );
+}
+
+function PlusIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function UserCircleIcon({ className = "h-6 w-6" }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="8" r="4" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </svg>
   );
 }
 
@@ -303,6 +357,7 @@ export default function NavBar() {
   const searchInputRef = useRef(null);
   const suggestAbortRef = useRef(null);
   const suggestReqIdRef = useRef(0);
+  const suppressSuggestForQueryRef = useRef("");
   const submitAbortRef = useRef(null);
 
   const menuId = useId();
@@ -313,7 +368,6 @@ export default function NavBar() {
     [user?.username, user?.email]
   );
   const emailLabel = useMemo(() => user?.email || "—", [user?.email]);
-  const avatarInitials = useMemo(() => getAvatarInitials(user), [user]);
 
   const trimmedGlobalSearch = useMemo(() => globalSearch.trim(), [globalSearch]);
   const canOpenSearchDropdown = useMemo(
@@ -383,6 +437,9 @@ export default function NavBar() {
   );
 
   const handleClearSearchInput = useCallback(() => {
+    suggestReqIdRef.current += 1;
+    suppressSuggestForQueryRef.current = "";
+
     if (suggestAbortRef.current) {
       suggestAbortRef.current.abort();
       suggestAbortRef.current = null;
@@ -393,6 +450,7 @@ export default function NavBar() {
       submitAbortRef.current = null;
     }
 
+    setIsSearchSubmitPending(false);
     setGlobalSearch("");
     resetSuggestionState();
     closeSearchDropdown();
@@ -418,6 +476,16 @@ export default function NavBar() {
         toast.error("Type at least 3 alphanumeric characters to search.");
         return;
       }
+      suppressSuggestForQueryRef.current = query;
+      suggestReqIdRef.current += 1;
+
+      if (suggestAbortRef.current) {
+        suggestAbortRef.current.abort();
+        suggestAbortRef.current = null;
+      }
+
+      resetSuggestionState();
+      closeSearchDropdown();
 
       if (submitAbortRef.current) {
         submitAbortRef.current.abort();
@@ -493,13 +561,13 @@ export default function NavBar() {
         closeSearchDropdown();
         navigate("/map");
       } finally {
-        if (submitAbortRef.current === controller) {
+            if (submitAbortRef.current === controller) {
           submitAbortRef.current = null;
+          setIsSearchSubmitPending(false);
         }
-        setIsSearchSubmitPending(false);
       }
     },
-    [closeSearchDropdown, globalSearch, location, navigate, navigateToFeedResults, setSelectedPlace]
+    [closeSearchDropdown,globalSearch,location,navigate,navigateToFeedResults,resetSuggestionState,setSelectedPlace]
   );
 
   const handleSelectPlaceSuggestion = useCallback(
@@ -507,16 +575,27 @@ export default function NavBar() {
       const searchText = getSearchTextFromSuggestion(item);
       if (!searchText) return;
 
+      suppressSuggestForQueryRef.current = searchText;
+      suggestReqIdRef.current += 1;
+
+      if (suggestAbortRef.current) {
+        suggestAbortRef.current.abort();
+        suggestAbortRef.current = null;
+      }
+
+      resetSuggestionState();
+      closeSearchDropdown();
       setGlobalSearch(searchText);
       await handleSubmitSearch(searchText);
     },
-    [handleSubmitSearch]
+    [closeSearchDropdown, handleSubmitSearch, resetSuggestionState]
   );
 
   const handleSelectAccountSuggestion = useCallback(
     (item) => {
       const username = String(item?.username || "").trim();
       if (!username) return;
+      suggestReqIdRef.current += 1;
 
       if (suggestAbortRef.current) {
         suggestAbortRef.current.abort();
@@ -528,24 +607,30 @@ export default function NavBar() {
         submitAbortRef.current = null;
       }
 
+      setIsSearchSubmitPending(false);
+
       clearSelectedPlace();
       setGlobalSearch("");
       resetSuggestionState();
       closeSearchDropdown();
       navigate(`/users/${encodeURIComponent(username)}`);
-    },
-    [clearSelectedPlace, closeSearchDropdown, navigate, resetSuggestionState]
-  );
+        },
+        [clearSelectedPlace, closeSearchDropdown, navigate, resetSuggestionState]
+      );
 
   useEffect(() => {
     if (location.pathname === "/feed") {
-      setGlobalSearch(getFeedSearchFromLocation(location));
+      const feedSearch = getFeedSearchFromLocation(location);
+
+      suppressSuggestForQueryRef.current = feedSearch;
+      setGlobalSearch(feedSearch);
       closeSearchDropdown();
       resetSuggestionState();
       return;
     }
 
     if (location.pathname !== "/feed" && location.pathname !== "/map") {
+      suppressSuggestForQueryRef.current = "";
       resetSuggestionState();
       closeSearchDropdown();
     }
@@ -602,100 +687,120 @@ export default function NavBar() {
     });
   }, [open]);
 
-  useEffect(() => {
-    if (suggestAbortRef.current) {
-      suggestAbortRef.current.abort();
-      suggestAbortRef.current = null;
-    }
+    useEffect(() => {
+  if (suggestAbortRef.current) {
+    suggestAbortRef.current.abort();
+    suggestAbortRef.current = null;
+  }
 
-    const query = trimmedGlobalSearch;
+  const query = trimmedGlobalSearch;
+  const suppressedQuery = suppressSuggestForQueryRef.current;
 
-    if (!canOpenSearchDropdown) {
+  if (suppressedQuery) {
+    if (query === suppressedQuery) {
+      suppressSuggestForQueryRef.current = "";
       resetSuggestionState();
       setIsSuggestLoading(false);
       setIsSearchOpen(false);
       return;
     }
 
-    const timerId = window.setTimeout(async () => {
-      const controller = new AbortController();
-      suggestAbortRef.current = controller;
+    suppressSuggestForQueryRef.current = "";
+  }
 
-      const reqId = (suggestReqIdRef.current += 1);
+  const requestId = (suggestReqIdRef.current += 1);
+
+  if (!canOpenSearchDropdown) {
+      resetSuggestionState();
+      setIsSuggestLoading(false);
+      setIsSearchOpen(false);
+      return;
+    }
+
+    let controller = null;
+
+    const timerId = window.setTimeout(async () => {
+      controller = new AbortController();
+      suggestAbortRef.current = controller;
       setIsSuggestLoading(true);
 
-      const [placesResult, accountsResult] = await Promise.allSettled([
-        api.get("/posts/locations/suggest", {
-          params: {
-            q: query,
-            limit: MAX_SUGGESTIONS
-          },
-          signal: controller.signal,
-          timeout: 10000
-        }),
-        searchAccounts(
-          query,
-          { limit: MAX_SUGGESTIONS },
-          {
+      try {
+        const [placesResult, accountsResult] = await Promise.allSettled([
+          api.get("/posts/locations/suggest", {
+            params: {
+              q: query,
+              limit: MAX_SUGGESTIONS
+            },
             signal: controller.signal,
             timeout: 10000
-          }
-        )
-      ]);
+          }),
+          searchAccounts(
+            query,
+            { limit: MAX_SUGGESTIONS },
+            {
+              signal: controller.signal,
+              timeout: 10000
+            }
+          )
+        ]);
 
-      if (reqId !== suggestReqIdRef.current) {
-        return;
-      }
+        if (requestId !== suggestReqIdRef.current) {
+          return;
+        }
 
-      const placesAborted =
-        placesResult.status === "rejected" && isAbortLikeError(placesResult.reason);
-      const accountsAborted =
-        accountsResult.status === "rejected" && isAbortLikeError(accountsResult.reason);
+        const placesAborted =
+          placesResult.status === "rejected" && isAbortLikeError(placesResult.reason);
+        const accountsAborted =
+          accountsResult.status === "rejected" && isAbortLikeError(accountsResult.reason);
 
-      if (placesAborted && accountsAborted) {
-        return;
-      }
+        if (placesAborted && accountsAborted) {
+          return;
+        }
 
-      const nextPlaceSuggestions =
-        placesResult.status === "fulfilled"
-          ? Array.isArray(placesResult.value?.data?.suggestions)
-            ? placesResult.value.data.suggestions
-            : []
-          : [];
+        const nextPlaceSuggestions =
+          placesResult.status === "fulfilled"
+            ? Array.isArray(placesResult.value?.data?.suggestions)
+              ? placesResult.value.data.suggestions
+              : []
+            : [];
 
-      const nextAccountSuggestions =
-        accountsResult.status === "fulfilled" ? accountsResult.value : [];
+        const nextAccountSuggestions =
+          accountsResult.status === "fulfilled" && Array.isArray(accountsResult.value)
+            ? accountsResult.value
+            : [];
 
-      const hadAnySuccess =
-        placesResult.status === "fulfilled" || accountsResult.status === "fulfilled";
+        const hadAnySuccess =
+          placesResult.status === "fulfilled" || accountsResult.status === "fulfilled";
 
-      if (!hadAnySuccess) {
-        resetSuggestionState();
-        setIsSearchOpen(false);
-        setIsSuggestLoading(false);
+        if (!hadAnySuccess) {
+          resetSuggestionState();
+          setIsSearchOpen(false);
+          return;
+        }
+
+        setPlaceSuggestions(nextPlaceSuggestions);
+        setAccountSuggestions(nextAccountSuggestions);
+        setIsSearchOpen(true);
+        setSearchActiveIndex(-1);
+      } finally {
+        if (requestId === suggestReqIdRef.current) {
+          setIsSuggestLoading(false);
+        }
 
         if (suggestAbortRef.current === controller) {
           suggestAbortRef.current = null;
         }
-        return;
-      }
-
-      setPlaceSuggestions(nextPlaceSuggestions);
-      setAccountSuggestions(nextAccountSuggestions);
-      setIsSearchOpen(true);
-      setSearchActiveIndex(-1);
-      setIsSuggestLoading(false);
-
-      if (suggestAbortRef.current === controller) {
-        suggestAbortRef.current = null;
       }
     }, SEARCH_DEBOUNCE_MS);
 
     return () => {
       window.clearTimeout(timerId);
 
-      if (suggestAbortRef.current) {
-        suggestAbortRef.current.abort();
+      if (controller) {
+        controller.abort();
+      }
+
+      if (suggestAbortRef.current === controller) {
         suggestAbortRef.current = null;
       }
     };
@@ -878,20 +983,24 @@ export default function NavBar() {
     [activeIndex, MENU_ITEMS]
   );
 
-  return (
-    <nav className="sticky top-0 z-[1100] border-b border-transparent bg-gradient-to-r from-cyan-600 via-teal-600 to-cyan-500">
-      <div className="mx-auto flex h-[72px] w-full max-w-[1400px] items-center gap-2 px-3 sm:h-[80px] sm:gap-3 sm:px-6 lg:h-[88px] lg:gap-4 lg:px-8">
+   return (
+    <nav className="sticky top-0 z-[1100] bg-white/92 backdrop-blur-xl">
+      <div className="mx-auto flex h-[88px] w-full max-w-[1480px] items-center gap-3 px-4 sm:gap-4 sm:px-6 lg:h-[96px] lg:gap-6 lg:px-8">
         <Link
           to="/feed"
-          className="flex min-w-0 shrink-0 items-center gap-2 text-white transition hover:text-cyan-100 sm:gap-3"
+          className="group flex min-w-0 shrink-0 items-center gap-3 transition focus:outline-none"
         >
-          <span className="inline-flex h-11 w-11 items-center justify-center rounded-[18px] border border-white/30 bg-white/12 text-white shadow-sm backdrop-blur md:h-12 md:w-12 lg:h-14 lg:w-14 lg:rounded-[20px]">
-            <span className="text-[22px] lg:text-[26px]" aria-hidden="true">
-              🌐
-            </span>
+          <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-cyan-700 via-teal-600 to-emerald-600 text-white shadow-[0_18px_42px_rgba(15,118,110,0.36)] transition-all duration-300 group-hover:-translate-y-0.5 group-hover:shadow-[0_22px_52px_rgba(15,118,110,0.44)] group-focus-visible:-translate-y-0.5 group-focus-visible:ring-4 group-focus-visible:ring-teal-200/70 group-active:translate-y-0 sm:h-[62px] sm:w-[62px]">
+            <BrandPinIcon className="h-8 w-8" />
           </span>
-          <span className="hidden truncate text-lg font-extrabold tracking-tight min-[420px]:inline lg:text-[22px]">
-            GeoTravel Journal
+
+          <span className="hidden min-w-0 sm:block">
+            <span className="block truncate text-[22px] font-extrabold tracking-tight text-teal-700 lg:text-[24px]">
+              GeoTravel
+            </span>
+            <span className="mt-[-2px] block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 lg:text-xs">
+              Journal
+            </span>
           </span>
         </Link>
 
@@ -904,8 +1013,8 @@ export default function NavBar() {
             }}
           >
             <div className="relative">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 sm:left-4 lg:left-5">
-                🔎
+              <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-slate-400">
+                <SearchIcon className="h-5 w-5" />
               </span>
 
               <input
@@ -914,17 +1023,20 @@ export default function NavBar() {
                 value={globalSearch}
                 onChange={(e) => setGlobalSearch(e.target.value)}
                 onFocus={() => {
-                  if (canOpenSearchDropdown) {
+                  if (
+                    canOpenSearchDropdown &&
+                    (isSuggestLoading || placeSuggestions.length > 0 || accountSuggestions.length > 0)
+                  ) {
                     setIsSearchOpen(true);
                   }
                 }}
                 onKeyDown={onSearchInputKeyDown}
-                placeholder="Search a place or account…"
+                placeholder="Search destinations, experiences..."
                 aria-label="Search places or accounts"
                 aria-expanded={isSearchOpen && canOpenSearchDropdown}
                 aria-controls={searchListboxId}
                 aria-activedescendant={activeDescendantId}
-                className="w-full rounded-[18px] border border-white/25 bg-white/88 px-10 py-2.5 pr-11 text-sm text-slate-900 shadow-sm outline-none backdrop-blur transition placeholder:text-slate-500 focus:border-white/70 focus:bg-white focus:ring-4 focus:ring-white/20 sm:rounded-[20px] sm:px-11 sm:py-3 sm:pr-12 sm:text-base lg:rounded-[24px] lg:px-14 lg:py-4 lg:pr-16 lg:text-lg"
+                className="w-full rounded-full border border-slate-200 bg-white px-12 py-3 pr-12 text-sm text-slate-900 shadow-[0_12px_32px_rgba(15,23,42,0.07)] outline-none transition-all duration-300 placeholder:text-slate-400 hover:border-slate-300 hover:shadow-[0_16px_36px_rgba(15,118,110,0.22)] focus:border-slate-400 focus:shadow-[0_22px_52px_rgba(15,118,110,0.44)] focus:ring-0 sm:px-14 sm:py-3.5 sm:text-base lg:px-16 lg:py-4"
               />
 
               {trimmedGlobalSearch ? (
@@ -932,7 +1044,7 @@ export default function NavBar() {
                   type="button"
                   onClick={handleClearSearchInput}
                   aria-label="Clear search"
-                  className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 sm:right-3 sm:h-9 sm:w-9 lg:right-4"
+                  className="absolute right-3 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
                 >
                   ✕
                 </button>
@@ -958,11 +1070,11 @@ export default function NavBar() {
 
         <Link
           to="/posts/new"
-          className="inline-flex min-h-11 shrink-0 items-center rounded-[18px] border border-white/30 bg-white/10 px-3 py-2.5 text-sm font-semibold text-white shadow-sm backdrop-blur transition hover:bg-white/18 sm:px-4 lg:rounded-[20px] lg:px-5 lg:py-3"
+          className="group relative inline-flex min-h-[56px] shrink-0 items-center rounded-full bg-gradient-to-r from-cyan-700 via-teal-600 to-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-[0_18px_46px_rgba(8,145,178,0.34),0_0_34px_rgba(16,185,129,0.26)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_60px_rgba(8,145,178,0.48),0_0_46px_rgba(16,185,129,0.40)] focus:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-teal-300/55 focus:shadow-[0_0_0_7px_rgba(45,212,191,0.24),0_26px_68px_rgba(8,145,178,0.52),0_0_52px_rgba(16,185,129,0.45)] active:translate-y-0 sm:px-7 sm:text-base"
           aria-label="Create a new post"
         >
-          <span aria-hidden="true">＋</span>
-          <span className="ml-1 hidden min-[420px]:inline">New Post</span>
+          <PlusIcon className="h-5 w-5 transition-transform duration-500 group-hover:rotate-180 group-focus-visible:rotate-180 group-active:rotate-180" />
+          <span className="ml-2 hidden min-[420px]:inline">New Post</span>
         </Link>
 
         <div
@@ -979,15 +1091,10 @@ export default function NavBar() {
             aria-haspopup="menu"
             aria-expanded={open}
             aria-controls={menuId}
-            className="flex min-h-11 items-center gap-2 rounded-[18px] border border-white/30 bg-white/10 px-3 py-2 text-sm font-medium text-white shadow-sm backdrop-blur transition hover:bg-white/18 md:rounded-[22px] md:px-4 md:py-2.5"
+            aria-label={`Open account menu for ${displayName}`}
+            className="inline-flex h-[56px] w-[56px] items-center justify-center rounded-full border border-cyan-200/35 bg-slate-50 text-slate-600 shadow-[0_14px_28px_rgba(15,23,42,0.10)] ring-1 ring-cyan-100/60 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-300/55 hover:bg-cyan-50 hover:text-cyan-700 hover:shadow-[0_18px_38px_rgba(8,145,178,0.20),0_0_30px_rgba(16,185,129,0.14)] focus:outline-none focus-visible:-translate-y-0.5 focus-visible:border-cyan-300/70 focus-visible:bg-cyan-50 focus-visible:text-cyan-700 focus-visible:shadow-[0_18px_38px_rgba(8,145,178,0.24),0_0_34px_rgba(16,185,129,0.18)] focus-visible:ring-4 focus-visible:ring-cyan-200/55 active:translate-y-0"
           >
-            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/30 bg-white/20 text-xs font-bold text-white md:h-11 md:w-11">
-              {avatarInitials}
-            </span>
-            <span className="hidden max-w-[160px] truncate text-base font-semibold sm:block md:text-lg">
-              {displayName}
-            </span>
-            <span className="hidden text-xs opacity-80 md:block">{open ? "▲" : "▼"}</span>
+            <UserCircleIcon className="h-6 w-6" />
           </button>
 
           {open && (
@@ -996,7 +1103,7 @@ export default function NavBar() {
               role="menu"
               aria-label="Account menu"
               onKeyDown={onMenuKeyDown}
-              className="absolute right-0 top-full z-[1101] mt-3 min-w-[220px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg md:min-w-[240px]"
+              className="absolute right-0 top-full z-[1101] mt-3 min-w-[220px] overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.18)] md:min-w-[240px]"
             >
               <div className="border-b border-slate-100 px-4 py-3 text-xs text-slate-500">
                 Signed in as
@@ -1035,6 +1142,7 @@ export default function NavBar() {
           )}
         </div>
       </div>
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] bg-gradient-to-r from-cyan-300/80 via-cyan-400 to-emerald-400 shadow-[0_0_14px_rgba(45,212,191,0.50)]" />
     </nav>
   );
 }

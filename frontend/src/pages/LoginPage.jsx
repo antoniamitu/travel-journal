@@ -59,6 +59,7 @@ export default function LoginPage() {
 
     clearError();
     setIsSubmitting(true);
+    let didNavigate = false;
 
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = new AbortController();
@@ -66,6 +67,8 @@ export default function LoginPage() {
     try {
       await login({ email: emailNormalized, password }, { signal: abortRef.current.signal });
       toast.success("Welcome back!");
+
+      didNavigate = true;
       navigate(redirectTo, { replace: true });
     } catch (err) {
       if (err?.name === "CanceledError" || err?.code === "ERR_CANCELED") return;
@@ -81,7 +84,9 @@ export default function LoginPage() {
         setErrorMsg("Network error. Please check your connection and try again.");
       }
     } finally {
-      setIsSubmitting(false);
+      if (!didNavigate) {
+        setIsSubmitting(false);
+      }
     }
   }
 

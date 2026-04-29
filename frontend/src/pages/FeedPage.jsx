@@ -5,6 +5,12 @@ import { api } from "../api/axios.js";
 import { listFeedPosts } from "../api/posts.js";
 import { useLocationContext } from "../hooks/useLocationContext.js";
 import { getSentimentUi } from "../utils/sentimentUi.js";
+import { makeCloudinaryOptimizer } from "../utils/cloudinaryImage.js";
+import {
+  getPlaceCategoryUi,
+  isKnownPlaceCategory,
+  PLACE_CATEGORY_FILTER_OPTIONS
+} from "../utils/placeCategoryUi.js";
 
 const DEFAULT_PAGE_SIZE = 12;
 const AI_COOLDOWN_MS = 60_000;
@@ -22,69 +28,7 @@ const FEED_SENTIMENT_OPTIONS = [
   { key: "negative", label: "Negative" }
 ];
 
-const FEED_CATEGORY_OPTIONS = [
-  { key: "all", label: "All categories" },
-  { key: "historical", label: "Historical" },
-  { key: "religious", label: "Religious" },
-  { key: "nature", label: "Nature" },
-  { key: "entertainment", label: "Entertainment" },
-  { key: "food_drink", label: "Food & Drink" },
-  { key: "shopping", label: "Shopping" },
-  { key: "urban_landmark", label: "Urban Landmark" },
-  { key: "other", label: "Other" }
-];
-
-const PLACE_CATEGORY_UI = {
-  historical: {
-    label: "Historical",
-    icon: "🏛️",
-    badge: "bg-stone-100 text-stone-700 ring-stone-200"
-  },
-  religious: {
-    label: "Religious",
-    icon: "🕍",
-    badge: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200"
-  },
-  nature: {
-    label: "Nature",
-    icon: "🌿",
-    badge: "bg-green-50 text-green-700 ring-green-200"
-  },
-  entertainment: {
-    label: "Entertainment",
-    icon: "🎭",
-    badge: "bg-indigo-50 text-indigo-700 ring-indigo-200"
-  },
-  food_drink: {
-    label: "Food & Drink",
-    icon: "🍽️",
-    badge: "bg-orange-50 text-orange-700 ring-orange-200"
-  },
-  shopping: {
-    label: "Shopping",
-    icon: "🛍️",
-    badge: "bg-pink-50 text-pink-700 ring-pink-200"
-  },
-  urban_landmark: {
-    label: "Urban Landmark",
-    icon: "🏙️",
-    badge: "bg-cyan-50 text-cyan-700 ring-cyan-200"
-  },
-  other: {
-    label: "Other",
-    icon: "📍",
-    badge: "bg-slate-100 text-slate-700 ring-slate-200"
-  }
-};
-
-function normalizeFeedCategory(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  return Object.prototype.hasOwnProperty.call(PLACE_CATEGORY_UI, normalized) ? normalized : "other";
-}
-
-function getPlaceCategoryUi(category) {
-  return PLACE_CATEGORY_UI[normalizeFeedCategory(category)] || PLACE_CATEGORY_UI.other;
-}
+const FEED_CATEGORY_OPTIONS = PLACE_CATEGORY_FILTER_OPTIONS;
 
 function formatDate(value) {
   if (!value) return "—";
@@ -97,18 +41,53 @@ function formatDate(value) {
   }).format(date);
 }
 
-function optimizeCloudinaryUrl(secureUrl, variant = "card") {
-  if (typeof secureUrl !== "string" || !secureUrl.includes("/upload/")) {
-    return secureUrl || "";
+function formatFeedPostDate(value) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+
+  if (diffMs < 0) {
+    return formatDate(value);
   }
 
-  const transform =
-    variant === "thumb"
-      ? "c_fill,w_700,h_520,g_auto,f_auto,q_auto"
-      : "c_fill,w_1400,h_900,g_auto,f_auto,q_auto";
+  const minuteMs = 60 * 1000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
 
-  return secureUrl.replace("/upload/", `/upload/${transform}/`);
+  const diffMinutes = Math.floor(diffMs / minuteMs);
+  const diffHours = Math.floor(diffMs / hourMs);
+  const diffDays = Math.floor(diffMs / dayMs);
+
+  if (diffMinutes < 1) {
+    return "Just now";
+  }
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes} minute${diffMinutes === 1 ? "" : "s"} ago`;
+  }
+
+  if (diffHours < 24) {
+    return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+  }
+
+  if (diffDays <= 7) {
+    return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+  }
+
+  return formatDate(value);
 }
+
+const optimizeCloudinaryUrl = makeCloudinaryOptimizer(
+  {
+    thumb: "c_fill,w_700,h_520,g_auto,f_auto,q_auto",
+    card: "c_fill,w_1400,h_900,g_auto,f_auto,q_auto"
+  },
+  "card"
+);
 
 
 function getPrivacyUi(privacy) {
@@ -159,8 +138,15 @@ function buildAiPayload(post) {
   };
 }
 
-function getAiLocationLabel(post) {
-  return post?.locationName || [post?.city, post?.country].filter(Boolean).join(", ") || "this location";
+function hasValidCoordinatePair(lat, lng) {
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180
+  );
 }
 
 function mergeUniquePosts(existing, incoming) {
@@ -183,14 +169,16 @@ function mergeUniquePosts(existing, incoming) {
   });
 }
 
+const DEFAULT_AI_STATE_OBJECT = Object.freeze({
+  status: "idle",
+  content: "",
+  error: "",
+  source: "",
+  cooldownUntil: 0
+});
+
 function getDefaultAiState() {
-  return {
-    status: "idle",
-    content: "",
-    error: "",
-    source: "",
-    cooldownUntil: 0
-  };
+  return { ...DEFAULT_AI_STATE_OBJECT };
 }
 
 function patchAiStateSetter(setter, postId, patch) {
@@ -227,7 +215,7 @@ function buildMapSelection(post) {
   const lat = Number(post?.latitude);
   const lng = Number(post?.longitude);
 
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+  if (!hasValidCoordinatePair(lat, lng)) {
     return null;
   }
 
@@ -272,176 +260,112 @@ function SafeFeedImage({ src, alt, className }) {
       alt={alt}
       className={className}
       loading="lazy"
+      decoding="async"
       onError={() => setHasError(true)}
     />
   );
 }
 
-function FeedHero() {
+function FeedFilterPill({ label, active, tone = "dark", disabled = false, onClick }) {
   return (
-    <section className="rounded-[32px] border border-slate-200/80 bg-white px-6 py-7 shadow-sm lg:px-8">
-      <div>
-        <div className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700">
-          Travel feed
-        </div>
-        <h1 className="mt-2 text-4xl font-bold tracking-tight text-slate-900">
-          Public travel posts ✨
-        </h1>
-        <p className="mt-4 max-w-4xl text-base leading-8 text-slate-600">
-          Browse public posts from other travelers, open places on the map, or ask AI for quick
-          historical and cultural context.
-        </p>
-      </div>
-    </section>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={[
+        "group inline-flex min-h-[58px] items-center justify-center rounded-full border-2 px-7 py-3 text-base font-bold transition-all duration-300 focus:outline-none",
+        active
+          ? tone === "teal"
+            ? "border-transparent bg-gradient-to-r from-cyan-700 via-teal-600 to-emerald-600 text-white shadow-[0_18px_42px_rgba(15,118,110,0.36)] hover:-translate-y-0.5 hover:shadow-[0_22px_52px_rgba(15,118,110,0.44),0_0_34px_rgba(16,185,129,0.28)] focus-visible:-translate-y-0.5 focus-visible:ring-4 focus-visible:ring-teal-200/70 focus-visible:shadow-[0_22px_52px_rgba(15,118,110,0.44),0_0_34px_rgba(16,185,129,0.28)] active:translate-y-0"
+            : "border-transparent bg-[#0f1b33] text-white shadow-[0_14px_28px_rgba(15,23,42,0.14)] hover:-translate-y-0.5 hover:shadow-[0_22px_52px_rgba(15,23,42,0.24),0_0_30px_rgba(8,145,178,0.16)] focus-visible:-translate-y-0.5 focus-visible:ring-4 focus-visible:ring-slate-300/70 focus-visible:shadow-[0_22px_52px_rgba(15,23,42,0.24),0_0_30px_rgba(8,145,178,0.16)] active:translate-y-0"
+          : "border-slate-200 bg-white text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800 hover:shadow-[0_18px_38px_rgba(8,145,178,0.16),0_0_30px_rgba(16,185,129,0.10)] focus-visible:-translate-y-0.5 focus-visible:border-slate-300 focus-visible:bg-slate-50 focus-visible:text-slate-700 focus-visible:ring-4 focus-visible:ring-cyan-200/55 focus-visible:shadow-[0_22px_52px_rgba(15,118,110,0.28),0_0_42px_rgba(16,185,129,0.18)] active:translate-y-0",
+        disabled ? "cursor-not-allowed opacity-60 hover:translate-y-0 focus-visible:translate-y-0" : ""
+      ].join(" ")}
+    >
+      {label}
+    </button>
   );
 }
 
-function FeedFiltersBar({
+function FeedIntroPanel({
   filters,
   isBusy,
   onSentimentChange,
-  onCategoryChange,
-  onClearSentiment,
-  onClearCategory,
-  onClearSearch
+  onCategoryChange
 }) {
   const hasFilters = hasActiveFeedFilters(filters);
 
   return (
-    <section className="rounded-[28px] border border-slate-200 bg-white px-5 py-5 shadow-sm lg:px-6">
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+    <section className="rounded-[34px] border border-[#d9efec] bg-[#eff8f7] px-6 py-8 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] lg:px-10 lg:py-10">
+      <div className="max-w-5xl">
+        <h1 className="text-[46px] font-extrabold tracking-tight text-slate-900 sm:text-[58px] lg:text-[66px]">
+          Discover{" "}
+          <span className="bg-gradient-to-r from-sky-600 via-cyan-600 to-teal-500 bg-clip-text text-transparent">
+            Stories
+          </span>
+        </h1>
+
+        <p className="mt-5 max-w-3xl text-lg leading-8 text-slate-500">
+          Explore authentic travel experiences from adventurers worldwide
+        </p>
+
+        <div className="mt-10 space-y-8">
           <div>
-            <div className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Feed filters
+            <div className="mb-4 text-[13px] font-extrabold uppercase tracking-[0.24em] text-slate-400">
+              Sentiment
             </div>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
-              Refine the current search
-            </h2>
-            <p className="mt-2 text-sm text-slate-600">
-              Use the top navigation search bar for places, then narrow the feed here by sentiment
-              or place category.
-            </p>
-          </div>
 
-          {hasFilters ? (
             <div className="flex flex-wrap gap-3">
-              {filters.q ? (
-                <button
-                  type="button"
-                  onClick={onClearSearch}
-                  disabled={isBusy}
-                  className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Clear search
-                </button>
-              ) : null}
-
-              {filters.sentiment !== "all" ? (
-                <button
-                  type="button"
-                  onClick={onClearSentiment}
-                  disabled={isBusy}
-                  className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Clear sentiment
-                </button>
-              ) : null}
-
-              {filters.category !== "all" ? (
-                <button
-                  type="button"
-                  onClick={onClearCategory}
-                  disabled={isBusy}
-                  className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Clear category
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-            Sentiment
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-3">
-            {FEED_SENTIMENT_OPTIONS.map((option) => {
-              const active = filters.sentiment === option.key;
-
-              return (
-                <button
+              {FEED_SENTIMENT_OPTIONS.map((option) => (
+                <FeedFilterPill
                   key={option.key}
-                  type="button"
+                  label={option.label}
+                  active={filters.sentiment === option.key}
+                  tone="dark"
+                  disabled={isBusy}
                   onClick={() => onSentimentChange(option.key)}
-                  disabled={isBusy}
-                  className={[
-                    "inline-flex min-h-10 items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition",
-                    active
-                      ? "bg-slate-900 text-white shadow-sm"
-                      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-                    isBusy ? "disabled:cursor-not-allowed disabled:opacity-60" : ""
-                  ].join(" ")}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-            Place category
+                />
+              ))}
+            </div>
           </div>
 
-          <div className="mt-3 flex flex-wrap gap-3">
-            {FEED_CATEGORY_OPTIONS.map((option) => {
-              const active = filters.category === option.key;
+          <div>
+            <div className="mb-4 text-[13px] font-extrabold uppercase tracking-[0.24em] text-slate-400">
+              Destinations
+            </div>
 
-              return (
-                <button
+            <div className="flex flex-wrap gap-4">
+              {FEED_CATEGORY_OPTIONS.map((option) => (
+                <FeedFilterPill
                   key={option.key}
-                  type="button"
-                  onClick={() => onCategoryChange(option.key)}
+                  label={option.label}
+                  active={filters.category === option.key}
+                  tone="teal"
                   disabled={isBusy}
-                  className={[
-                    "inline-flex min-h-10 items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition",
-                    active
-                      ? "bg-emerald-600 text-white shadow-sm"
-                      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-                    isBusy ? "disabled:cursor-not-allowed disabled:opacity-60" : ""
-                  ].join(" ")}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
+                  onClick={() => onCategoryChange(option.key)}
+                />
+              ))}
+            </div>
           </div>
         </div>
 
         {hasFilters ? (
-          <div className="flex flex-wrap gap-2">
+          <div className="mt-6 flex flex-wrap gap-2">
             {filters.q ? (
-              <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+              <span className="inline-flex items-center rounded-full bg-white px-4 py-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
                 Search: {filters.q}
               </span>
             ) : null}
 
             {filters.sentiment !== "all" ? (
-              <span className="inline-flex items-center rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 ring-1 ring-violet-200">
+              <span className="inline-flex items-center rounded-full bg-white px-4 py-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
                 Sentiment: {filters.sentiment}
               </span>
             ) : null}
 
             {filters.category !== "all" ? (
-              <span
-                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${getPlaceCategoryUi(filters.category).badge}`}
-              >
-                <span aria-hidden="true">{getPlaceCategoryUi(filters.category).icon}</span>
-                <span>Category: {getPlaceCategoryUi(filters.category).label}</span>
+              <span className="inline-flex items-center rounded-full bg-white px-4 py-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
+                Category: {getPlaceCategoryUi(filters.category).label}
               </span>
             ) : null}
           </div>
@@ -520,14 +444,19 @@ function EmptyFeedState({ filters }) {
   );
 }
 
-function FeedImageGallery({ post }) {
+const FeedImageGallery = React.memo(function FeedImageGallery({ post }) {
   const images = normalizePreviewImages(post);
-  const remaining = Math.max(0, Number(post?.imageCount || 0) - images.length);
+  const totalImages = Number.isFinite(Number(post?.imageCount))
+    ? Number(post.imageCount)
+    : images.length;
+  const remaining = Math.max(0, totalImages - images.length);
 
   if (images.length === 0) {
     return (
       <div className="mt-6 rounded-[26px] border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-sm text-slate-500">
-        No preview images for this post.
+        {totalImages > 0
+          ? `${totalImages} image${totalImages === 1 ? "" : "s"} attached, but no preview is available.`
+          : "No preview images for this post."}
       </div>
     );
   }
@@ -585,18 +514,98 @@ function FeedImageGallery({ post }) {
           </div>
         ) : (
           <div className="rounded-[26px] border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-            {post.imageCount} image{post.imageCount === 1 ? "" : "s"} attached
+            {totalImages} image{totalImages === 1 ? "" : "s"} attached
           </div>
         )}
       </div>
     </div>
   );
+});
+
+function FeedUserIcon({ className = "h-7 w-7" }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      stroke="currentColor"
+      strokeWidth="2.1"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="8" r="3.75" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </svg>
+  );
 }
 
-function FeedPostCard({ post, aiState, aiRemainingSeconds, onRequestLearnMore, onOpenOnMap }) {
+function FeedLocationIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      stroke="currentColor"
+      strokeWidth="2.35"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 21s6.5-4.45 6.5-10.35A6.5 6.5 0 1 0 5.5 10.65C5.5 16.55 12 21 12 21Z" />
+      <circle cx="12" cy="10.5" r="2.15" />
+    </svg>
+  );
+}
+
+function getFeedSentimentPillClass(sentiment) {
+  if (sentiment === "positive") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700 ring-emerald-200";
+  }
+
+  if (sentiment === "negative") {
+    return "border-rose-200 bg-rose-50 text-rose-700 ring-rose-200";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-700 ring-slate-200";
+}
+
+function getFeedPrivacyPillClass(privacy) {
+  if (privacy === "public") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700 ring-emerald-200";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-700 ring-slate-200";
+}
+
+const FEED_IMAGE_PILL_CLASS =
+  "border-blue-200 bg-blue-50 text-blue-700 ring-blue-200";
+
+function shouldSkipCardNavigation(event) {
+  const target = event?.target;
+
+  if (!(target instanceof Element)) {
+    return false;
+  }
+
+  return Boolean(
+    target.closest(
+      "a, button, input, textarea, select, [role='button'], [data-no-card-nav='true']"
+    )
+  );
+}
+
+const FeedPostCard = React.memo(function FeedPostCard({
+  post,
+  aiState,
+  aiRemainingSeconds,
+  onRequestLearnMore,
+  onOpenOnMap,
+  onOpenPost
+}) {
   const sentimentUi = getSentimentUi(post.sentiment, post.sentimentScore, "feed");
   const privacyUi = getPrivacyUi(post.privacy);
   const placeCategoryUi = getPlaceCategoryUi(post.placeCategory);
+  const username = String(post?.username || "Traveler").trim() || "Traveler";
+  const profileUrl = post?.username ? `/users/${encodeURIComponent(post.username)}` : null;
 
   const aiStatus = aiState?.status || "idle";
   const aiContent = aiState?.content || "";
@@ -618,98 +627,131 @@ function FeedPostCard({ post, aiState, aiRemainingSeconds, onRequestLearnMore, o
             ? "Refresh Learn More"
             : "Learn More";
 
+  const relativeCreatedAt = formatFeedPostDate(post.createdAt);
+  const locationLabel =
+    dedupeParts([post.locationName, post.city, post.country]).join(", ") || "Open on map";
+
+  const imageCount = Number.isFinite(Number(post?.imageCount))
+    ? Number(post.imageCount)
+    : normalizePreviewImages(post).length;
+
   return (
-    <article className="overflow-hidden rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md lg:p-6">
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${sentimentUi.badge}`}
-          >
-            <span aria-hidden="true">{sentimentUi.emoji}</span>
-            <span>{sentimentUi.label}</span>
-          </span>
+    <article
+      role="link"
+      tabIndex={0}
+      aria-label={`Open post: ${post.title}`}
+      onClick={(event) => {
+        if (shouldSkipCardNavigation(event)) return;
+        onOpenPost?.(post);
+      }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
 
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${privacyUi.badge}`}
-          >
-            <span aria-hidden="true">{privacyUi.icon}</span>
-            <span>{privacyUi.label}</span>
-          </span>
-
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${placeCategoryUi.badge}`}
-          >
-            <span aria-hidden="true">{placeCategoryUi.icon}</span>
-            <span>{placeCategoryUi.label}</span>
-          </span>
-
-          <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-            {formatDate(post.createdAt)}
-          </span>
-
-          {post.imageCount > 0 && (
-            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-              {post.imageCount} image{post.imageCount === 1 ? "" : "s"}
-            </span>
-          )}
-        </div>
-
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight text-slate-900 lg:text-[2rem]">
-            {post.title}
-          </h2>
-
-          <div className="mt-3 flex flex-col gap-1 text-sm text-slate-500 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4">
-            <Link
-              to={`/users/${encodeURIComponent(post.username)}`}
-              className="font-semibold text-emerald-700 transition hover:text-emerald-800 hover:underline"
-            >
-              By @{post.username}
-            </Link>
-            <span>📍 {post.locationName}</span>
-            {(post.city || post.country) && (
-              <span>{dedupeParts([post.city, post.country]).join(", ")}</span>
-            )}
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpenPost?.(post);
+        }
+      }}
+      className="group cursor-pointer overflow-hidden rounded-[34px] border border-cyan-100/80 bg-white p-5 shadow-[0_18px_42px_rgba(8,145,178,0.10),0_0_34px_rgba(16,185,129,0.08)] outline-none transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-100 hover:shadow-[0_30px_80px_rgba(8,145,178,0.24),0_0_70px_rgba(16,185,129,0.22)] focus-visible:-translate-y-0.5 focus-visible:border-cyan-200 focus-visible:ring-4 focus-visible:ring-cyan-200/55 focus-visible:shadow-[0_30px_80px_rgba(8,145,178,0.30),0_0_80px_rgba(16,185,129,0.26)] active:translate-y-0 lg:p-6"
+    >
+      <div className="flex flex-col">
+        <header className="flex items-center gap-4">
+          <div className="inline-flex h-[58px] w-[58px] shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 shadow-[0_14px_28px_rgba(15,23,42,0.10)] ring-1 ring-slate-100">
+            <FeedUserIcon className="h-7 w-7" />
           </div>
-        </div>
+
+          <div className="min-w-0">
+            {profileUrl ? (
+              <Link
+                to={profileUrl}
+                className="block w-fit break-words text-[22px] font-extrabold tracking-tight text-slate-950 transition hover:text-slate-700 focus:outline-none focus-visible:rounded-xl focus-visible:ring-4 focus-visible:ring-cyan-200/55"
+              >
+                {username}
+              </Link>
+            ) : (
+              <div className="break-words text-[22px] font-extrabold tracking-tight text-slate-950">
+                {username}
+              </div>
+            )}
+
+            <div className="mt-1 text-sm font-semibold text-slate-500">
+              {relativeCreatedAt}
+            </div>
+          </div>
+        </header>
+
+        <button
+          type="button"
+          onClick={() => onOpenOnMap(post)}
+          className="mt-6 inline-flex w-fit max-w-full min-h-[44px] items-center gap-3 rounded-[18px] border border-cyan-200/80 bg-cyan-50/90 px-5 py-2.5 text-left text-sm font-extrabold text-teal-700 shadow-[0_10px_24px_rgba(8,145,178,0.12)] ring-1 ring-cyan-100/80 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-300 hover:bg-cyan-50 hover:text-teal-800 hover:shadow-[0_18px_38px_rgba(8,145,178,0.20),0_0_30px_rgba(16,185,129,0.14)] focus:outline-none focus-visible:-translate-y-0.5 focus-visible:border-cyan-300 focus-visible:bg-cyan-50 focus-visible:text-teal-800 focus-visible:ring-4 focus-visible:ring-cyan-200/55 focus-visible:shadow-[0_22px_52px_rgba(15,118,110,0.28),0_0_42px_rgba(16,185,129,0.18)] active:translate-y-0"
+        >
+          <FeedLocationIcon className="h-5 w-5 shrink-0 text-cyan-600" />
+          <span className="min-w-0 truncate">{locationLabel}</span>
+        </button>
+
+        <p className="mt-7 whitespace-pre-line text-[17px] leading-8 text-slate-800 lg:text-[18px]">
+          {post.contentPreview || "No preview available."}
+        </p>
 
         <FeedImageGallery post={post} />
 
-        <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4">
-          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-            Preview
-          </div>
-          <p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-700 lg:text-[15px]">
-            {post.contentPreview || "No preview available."}
-          </p>
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <span
+            className={[
+              "inline-flex min-h-[40px] items-center gap-2 rounded-full border px-4 py-2 text-[13px] font-extrabold uppercase tracking-[0.08em] shadow-[0_10px_22px_rgba(15,23,42,0.06)] ring-1",
+              getFeedSentimentPillClass(sentimentUi.sentiment)
+            ].join(" ")}
+          >
+            <span aria-hidden="true">{sentimentUi.emoji}</span>
+            <span>{String(sentimentUi.label || "").toUpperCase()}</span>
+          </span>
+
+          <span
+            className={[
+              "inline-flex min-h-[40px] items-center gap-2 rounded-full border px-4 py-2 text-[13px] font-extrabold uppercase tracking-[0.08em] shadow-[0_10px_22px_rgba(15,23,42,0.06)] ring-1",
+              getFeedPrivacyPillClass(post.privacy)
+            ].join(" ")}
+          >
+            <span aria-hidden="true">{privacyUi.icon}</span>
+            <span>{privacyUi.label.toUpperCase()}</span>
+          </span>
+
+          <span
+            className={[
+              "inline-flex min-h-[40px] items-center gap-2 rounded-full border border-transparent px-4 py-2 text-[13px] font-extrabold uppercase tracking-[0.08em] shadow-[0_10px_22px_rgba(15,23,42,0.06)] ring-1",
+              placeCategoryUi.badge
+            ].join(" ")}
+          >
+            <span aria-hidden="true">{placeCategoryUi.icon}</span>
+            <span>{placeCategoryUi.label.toUpperCase()}</span>
+          </span>
+
+          {imageCount > 0 ? (
+            <span
+              className={[
+                "inline-flex min-h-[40px] items-center gap-2 rounded-full border px-4 py-2 text-[13px] font-extrabold uppercase tracking-[0.08em] shadow-[0_10px_22px_rgba(15,23,42,0.06)] ring-1",
+                FEED_IMAGE_PILL_CLASS
+              ].join(" ")}
+            >
+              <span aria-hidden="true">🖼️</span>
+              <span>
+                {imageCount} image{imageCount === 1 ? "" : "s"}
+              </span>
+            </span>
+          ) : null}
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Link
-            to={`/posts/${post.id}`}
-            className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
-          >
-            View Full Post
-          </Link>
-
-          <button
-            type="button"
-            onClick={() => onOpenOnMap(post)}
-            className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-          >
-            Open on Map
-          </button>
-
+        <div className="mt-7 grid gap-3">
           <button
             type="button"
             onClick={() => onRequestLearnMore(post)}
             disabled={aiRemainingSeconds > 0 || isAiLoading}
             aria-busy={isAiLoading}
             className={[
-              "inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition",
+              "inline-flex min-h-[56px] items-center justify-center gap-2 rounded-[20px] px-5 py-3 text-sm font-extrabold transition-all duration-300 focus:outline-none active:translate-y-0",
               aiRemainingSeconds > 0 || isAiLoading
-                ? "cursor-not-allowed bg-violet-100 text-violet-500"
-                : "bg-violet-600 text-white hover:bg-violet-700"
+                ? "cursor-not-allowed bg-violet-100 text-violet-500 shadow-none"
+                : "bg-violet-600 text-white shadow-[0_16px_34px_rgba(124,58,237,0.28),0_0_30px_rgba(139,92,246,0.16)] hover:-translate-y-0.5 hover:bg-violet-700 hover:shadow-[0_24px_54px_rgba(124,58,237,0.42),0_0_46px_rgba(139,92,246,0.28)] focus-visible:-translate-y-0.5 focus-visible:bg-violet-700 focus-visible:ring-4 focus-visible:ring-violet-200/70 focus-visible:shadow-[0_26px_62px_rgba(124,58,237,0.48),0_0_54px_rgba(139,92,246,0.34)]"
             ].join(" ")}
           >
             {isAiLoading ? (
@@ -725,11 +767,11 @@ function FeedPostCard({ post, aiState, aiRemainingSeconds, onRequestLearnMore, o
         </div>
 
         {aiCardVisible ? (
-          <div className="rounded-[24px] border border-violet-200 bg-violet-50 px-5 py-4">
+          <div className="mt-5 rounded-[24px] border border-violet-200 bg-violet-50 px-5 py-4">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-violet-950">
-                  ✨ Learn more about {getAiLocationLabel(post)}
+                  ✨ Learn more about {post?.locationName || "this location"}
                 </div>
                 <div className="mt-1 text-xs text-violet-900/75">
                   Historical and cultural context generated for this location.
@@ -752,13 +794,19 @@ function FeedPostCard({ post, aiState, aiRemainingSeconds, onRequestLearnMore, o
                 </div>
               ) : aiError ? (
                 <div className="rounded-[20px] border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
-                  <div className="font-semibold text-rose-800">Couldn&apos;t load extra information</div>
+                  <div className="font-semibold text-rose-800">
+                    Couldn&apos;t load extra information
+                  </div>
                   <div className="mt-1">{aiError}</div>
                 </div>
               ) : hasAiContent ? (
                 <div className="rounded-[20px] border border-violet-200 bg-white/90 px-4 py-4">
-                  <p className="whitespace-pre-line text-sm leading-7 text-slate-700">{aiContent}</p>
-                  <div className="mt-3 text-xs italic text-slate-500">Powered by Google Gemini</div>
+                  <p className="whitespace-pre-line text-sm leading-7 text-slate-700">
+                    {aiContent}
+                  </p>
+                  <div className="mt-3 text-xs italic text-slate-500">
+                    Powered by Google Gemini
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -767,7 +815,7 @@ function FeedPostCard({ post, aiState, aiRemainingSeconds, onRequestLearnMore, o
       </div>
     </article>
   );
-}
+});
 
 function getFiltersFromSearchParams(searchParams) {
   const q = String(searchParams.get("q") || "").trim();
@@ -777,10 +825,7 @@ function getFiltersFromSearchParams(searchParams) {
   return {
     q,
     sentiment: ["positive", "neutral", "negative"].includes(rawSentiment) ? rawSentiment : "all",
-    category:
-      FEED_CATEGORY_OPTIONS.some((option) => option.key === rawCategory) && rawCategory !== "all"
-        ? rawCategory
-        : "all"
+    category: rawCategory !== "all" && isKnownPlaceCategory(rawCategory) ? rawCategory : "all"
   };
 }
 
@@ -835,17 +880,29 @@ export default function FeedPage() {
   }, []);
 
   useEffect(() => {
-    const hasActiveCooldown = Object.values(aiByPostId).some((item) => {
+  const hasActiveCooldown = Object.values(aiByPostId).some((item) => {
+    const cooldownUntil = item?.cooldownUntil || 0;
+    return cooldownUntil > Date.now();
+  });
+
+  if (!hasActiveCooldown) return undefined;
+
+  setTickNowMs(Date.now());
+
+  const intervalId = window.setInterval(() => {
+    const now = Date.now();
+
+    setTickNowMs(now);
+
+    const stillActive = Object.values(aiByPostId).some((item) => {
       const cooldownUntil = item?.cooldownUntil || 0;
-      return cooldownUntil > Date.now();
+      return cooldownUntil > now;
     });
 
-    if (!hasActiveCooldown) return;
-
-    setTickNowMs(Date.now());
-    const intervalId = window.setInterval(() => {
-      setTickNowMs(Date.now());
-    }, 1000);
+    if (!stillActive) {
+      window.clearInterval(intervalId);
+    }
+  }, 1000);
 
     return () => window.clearInterval(intervalId);
   }, [aiByPostId]);
@@ -904,7 +961,9 @@ export default function FeedPage() {
 
       if (reqId !== feedReqIdRef.current) return;
 
-      const nextPosts = Array.isArray(result?.posts) ? result.posts : [];
+      const nextPosts = Array.isArray(result?.posts)
+      ? result.posts.filter((item) => item && item.id != null)
+      : [];
       const nextPagination = result?.pagination ?? {
         page: pageToLoad,
         limit: DEFAULT_PAGE_SIZE,
@@ -922,6 +981,8 @@ export default function FeedPage() {
       ) {
         return;
       }
+      
+      if (reqId !== feedReqIdRef.current) return;
 
       const status = err?.response?.status;
       const message = err?.response?.data?.message;
@@ -969,8 +1030,7 @@ export default function FeedPage() {
 
     if (
       !payload.locationName ||
-      !Number.isFinite(payload.latitude) ||
-      !Number.isFinite(payload.longitude)
+      !hasValidCoordinatePair(payload.latitude, payload.longitude)
     ) {
       patchAiStateSetter(setAiByPostId, postId, {
         status: "error",
@@ -1116,12 +1176,6 @@ export default function FeedPage() {
     [searchParams, setSearchParams]
   );
 
-  const handleClearSentiment = useCallback(() => {
-    const params = new URLSearchParams(searchParams);
-    params.delete("sentiment");
-    setSearchParams(params, { replace: false });
-  }, [searchParams, setSearchParams]);
-
   const handleCategoryChange = useCallback(
     (nextCategory) => {
       const params = new URLSearchParams(searchParams);
@@ -1142,18 +1196,13 @@ export default function FeedPage() {
     [searchParams, setSearchParams]
   );
 
-  const handleClearCategory = useCallback(() => {
-    const params = new URLSearchParams(searchParams);
-    params.delete("category");
-    setSearchParams(params, { replace: false });
-  }, [searchParams, setSearchParams]);
-
-  const handleClearSearch = useCallback(() => {
-    const params = new URLSearchParams(searchParams);
-    params.delete("q");
-    setSearchParams(params, { replace: false });
-  }, [searchParams, setSearchParams]);
-
+  const handleOpenPost = useCallback(
+    (selectedPost) => {
+      if (!selectedPost?.id) return;
+      navigate(`/posts/${selectedPost.id}`);
+    },
+    [navigate]
+  );
   const showBlockingError = !isInitialLoading && Boolean(feedError) && posts.length === 0;
 
   let mainContent = null;
@@ -1176,10 +1225,11 @@ export default function FeedPage() {
           <FeedPostCard
             key={post.id}
             post={post}
-            aiState={aiByPostId[post.id] || getDefaultAiState()}
+            aiState={aiByPostId[post.id] || DEFAULT_AI_STATE_OBJECT}
             aiRemainingSeconds={aiRemainingByPostId[post.id] || 0}
             onRequestLearnMore={requestLearnMore}
             onOpenOnMap={handleOpenOnMap}
+            onOpenPost={handleOpenPost}
           />
         ))}
       </div>
@@ -1192,20 +1242,15 @@ export default function FeedPage() {
   };
 
   return (
-    <div className="min-h-full bg-slate-50/95">
-      <div className="w-full px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
-        <div className="space-y-5">
-          <FeedHero />
-
-          <FeedFiltersBar
-            filters={effectiveFilters}
-            isBusy={isInitialLoading || isLoadingMore}
-            onSentimentChange={handleSentimentChange}
-            onCategoryChange={handleCategoryChange}
-            onClearSentiment={handleClearSentiment}
-            onClearCategory={handleClearCategory}
-            onClearSearch={handleClearSearch}
-          />
+  <div className="min-h-full bg-[#eff7f6]">
+    <div className="w-full px-4 py-5 sm:px-6 lg:px-10 lg:py-8">
+      <div className="mx-auto max-w-[1120px] space-y-6">
+        <FeedIntroPanel
+          filters={effectiveFilters}
+          isBusy={isInitialLoading || isLoadingMore}
+          onSentimentChange={handleSentimentChange}
+          onCategoryChange={handleCategoryChange}
+        />
 
           {feedError ? (
             <section className="rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">

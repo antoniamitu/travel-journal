@@ -1,6 +1,7 @@
 // frontend/src/api/axios.js
 import axios from "axios";
 import { LS_TOKEN_KEY } from "../constants/storage.js";
+import { getStorageItem } from "../utils/safeStorage.js";
 
 /**
  * Central axios instance for the app.
@@ -18,7 +19,7 @@ function resolveApiBaseUrl() {
   }
 
   // Controlled dev fallback (helps avoid confusing "it calls Vite" bugs)
-  if (typeof window !== "undefined" && window.location?.hostname === "localhost") {
+  if (typeof window !== "undefined" && ["localhost", "127.0.0.1"].includes(window.location?.hostname)) {
     // eslint-disable-next-line no-console
     console.warn(
       "[axios] VITE_API_BASE_URL is missing. Falling back to http://localhost:3000/api (dev only)."
@@ -48,7 +49,7 @@ export const api = axios.create({
  */
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem(LS_TOKEN_KEY);
+    const token = getStorageItem(LS_TOKEN_KEY);
     if (token) {
       config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;

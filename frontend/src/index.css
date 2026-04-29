@@ -10,12 +10,14 @@ body,
 
 html {
   -webkit-text-size-adjust: 100%;
+  scrollbar-gutter: stable;
 }
 
 body {
   margin: 0;
   min-width: 320px;
-  background: #f1f5f9;
+  background: #ffffff;
+  color: #0f172a;
 }
 
 img,
@@ -45,5 +47,21 @@ textarea {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+.map-page-shell {
+  height: calc(100dvh - 88px - 5.5rem - env(safe-area-inset-bottom));
+}
+
+@media (min-width: 768px) {
+  .map-page-shell {
+    height: calc(100dvh - 88px);
+  }
+}
+
+@media (min-width: 1024px) {
+  .map-page-shell {
+    height: calc(100dvh - 96px);
   }
 }

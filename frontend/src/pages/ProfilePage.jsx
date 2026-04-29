@@ -226,6 +226,7 @@ export default function ProfilePage() {
     deleteAbortRef.current = controller;
 
     setIsDeleting(true);
+    let didNavigate = false;
 
     try {
       await deleteOwnProfile({
@@ -240,6 +241,7 @@ export default function ProfilePage() {
 
       toast.success("Account deleted successfully");
       setDeleteOpen(false);
+      didNavigate = true;
       navigate("/login", { replace: true });
     } catch (err) {
       if (
@@ -255,6 +257,7 @@ export default function ProfilePage() {
 
       if (httpStatus === 401 || httpStatus === 403) {
         setDeleteOpen(false);
+        didNavigate = true;
         navigate("/login", { replace: true });
         return;
       }
@@ -267,7 +270,9 @@ export default function ProfilePage() {
         toast.error(message || "Failed to delete account. Please try again later.");
       }
     } finally {
-      setIsDeleting(false);
+      if (!didNavigate) {
+        setIsDeleting(false);
+      }
 
       if (deleteAbortRef.current === controller) {
         deleteAbortRef.current = null;

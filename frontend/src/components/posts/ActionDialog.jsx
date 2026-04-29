@@ -44,11 +44,27 @@ export default function ActionDialog({
   const confirmRef = useRef(null);
   const lastFocusedRef = useRef(null);
 
+  const busyRef = useRef(busy);
+  const onCloseRef = useRef(onClose);
+  const showCancelButtonRef = useRef(showCancelButton);
+
   const generatedTitleId = useId();
   const generatedDescriptionId = useId();
 
   const resolvedTitleId = titleId || generatedTitleId;
   const resolvedDescriptionId = descriptionId || generatedDescriptionId;
+
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    showCancelButtonRef.current = showCancelButton;
+  }, [showCancelButton]);
 
   const iconToneClass = useMemo(() => {
     if (tone === "neutral") return "bg-slate-100 text-slate-700";
@@ -63,19 +79,41 @@ export default function ActionDialog({
   }, [tone]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) return undefined;
 
     lastFocusedRef.current = document.activeElement;
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
+    requestAnimationFrame(() => {
+      const target = showCancelButtonRef.current ? cancelRef.current : confirmRef.current;
+      target?.focus();
+    });
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+
+      const lastFocused = lastFocusedRef.current;
+      if (
+        lastFocused &&
+        typeof lastFocused.focus === "function" &&
+        document.contains(lastFocused)
+      ) {
+        requestAnimationFrame(() => lastFocused.focus());
+      }
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
     function onKeyDown(e) {
       if (!overlayRef.current) return;
 
-      if (e.key === "Escape" && !busy) {
+      if (e.key === "Escape" && !busyRef.current) {
         e.preventDefault();
-        onClose?.();
+        onCloseRef.current?.();
         return;
       }
 
@@ -97,21 +135,8 @@ export default function ActionDialog({
     }
 
     document.addEventListener("keydown", onKeyDown);
-
-    requestAnimationFrame(() => {
-      const target = showCancelButton ? cancelRef.current : confirmRef.current;
-      target?.focus();
-    });
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", onKeyDown);
-
-      if (lastFocusedRef.current && typeof lastFocusedRef.current.focus === "function") {
-        requestAnimationFrame(() => lastFocusedRef.current.focus());
-      }
-    };
-  }, [open, busy, onClose, showCancelButton]);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open]);
 
   if (!open) return null;
 

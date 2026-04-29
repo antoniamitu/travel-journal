@@ -13,7 +13,7 @@ export default function AppLayout() {
   const hideSidebar = isEditorWorkspace(location.pathname);
 
   return (
-    <div className="flex min-h-screen flex-col overflow-x-hidden bg-slate-100">
+    <div className="flex min-h-screen flex-col overflow-x-hidden bg-white">
       <NavBar />
 
       <div className="flex min-h-0 flex-1">

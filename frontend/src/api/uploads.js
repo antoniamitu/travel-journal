@@ -22,7 +22,22 @@ export async function cleanupDraftUploads(publicIds, options = {}) {
 
 export async function uploadFileToCloudinary(file, signedPayload, { signal, onProgress } = {}) {
   if (!file) throw new Error("Missing file.");
-  if (!signedPayload?.uploadUrl) throw new Error("Missing signed Cloudinary upload payload.");
+
+  if (!signedPayload || typeof signedPayload !== "object") {
+    throw new Error("Missing signed Cloudinary upload payload.");
+  }
+
+  const requiredSignedFields = ["uploadUrl", "apiKey", "timestamp", "signature"];
+  const missingSignedFields = requiredSignedFields.filter((key) => {
+    const value = signedPayload[key];
+    return value === null || value === undefined || String(value).trim() === "";
+  });
+
+  if (missingSignedFields.length > 0) {
+    throw new Error(
+      `Invalid signed Cloudinary upload payload. Missing: ${missingSignedFields.join(", ")}.`
+    );
+  }
 
   const formData = new FormData();
   formData.append("file", file);

@@ -1,5 +1,6 @@
 // frontend/src/pages/MapPage.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import { Link } from "react-router-dom";
 import {
@@ -25,6 +26,15 @@ import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 
+import {
+  buildCloudinarySrcSet,
+  makeCloudinaryOptimizer
+} from "../utils/cloudinaryImage.js";
+import {
+  getPlaceCategoryUi,
+  normalizePlaceCategory
+} from "../utils/placeCategoryUi.js";
+
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: markerIcon2x,
@@ -36,7 +46,6 @@ const TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
-const CLOUDINARY_UPLOAD_SEGMENT = "/upload/";
 const LIGHTBOX_SWIPE_THRESHOLD_PX = 56;
 const MAP_FETCH_DEBOUNCE_MS = 500;
 const WORLD_LNG_EPSILON = 1e-6;
@@ -49,14 +58,16 @@ const MOBILE_SHEET_MAX_DRAG_PX = 220;
 
 const markerIconCache = new Map();
 
+const DEFAULT_AI_STATE_OBJECT = Object.freeze({
+  status: "idle",
+  content: "",
+  error: "",
+  source: "",
+  cooldownUntil: 0
+});
+
 function getDefaultAiState() {
-  return {
-    status: "idle",
-    content: "",
-    error: "",
-    source: "",
-    cooldownUntil: 0
-  };
+  return { ...DEFAULT_AI_STATE_OBJECT };
 }
 
 function ClickHandler({ onPick }) {
@@ -94,6 +105,21 @@ function normalizeLng(value) {
   while (lng < -180) lng += 360;
   while (lng > 180) lng -= 360;
   return lng;
+}
+
+function getFiniteLatLng(latValue, lngValue) {
+  const lat = Number(latValue);
+  const lng = Number(lngValue);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return null;
+  }
+
+  return { lat, lng };
 }
 
 function serializeBounds(bounds) {
@@ -178,67 +204,15 @@ function formatDate(value) {
   }).format(date);
 }
 
-function isCloudinaryUrl(url) {
-  return typeof url === "string" && url.includes(CLOUDINARY_UPLOAD_SEGMENT);
-}
-
-function injectCloudinaryTransform(url, transform) {
-  if (!isCloudinaryUrl(url)) return url || "";
-  return url.replace(CLOUDINARY_UPLOAD_SEGMENT, `${CLOUDINARY_UPLOAD_SEGMENT}${transform}/`);
-}
-
-function optimizeCloudinaryUrl(secureUrl, variant = "panel") {
-  if (!isCloudinaryUrl(secureUrl)) {
-    return secureUrl || "";
-  }
-
-  const transform =
-    variant === "thumb"
-      ? "c_fill,g_auto,w_640,h_420,f_auto,q_auto"
-      : variant === "full"
-        ? "c_limit,w_2000,f_auto,q_auto"
-        : variant === "preview"
-          ? "c_limit,w_1440,f_auto,q_auto"
-          : "c_fill,g_auto,w_1200,h_760,f_auto,q_auto";
-
-  return injectCloudinaryTransform(secureUrl, transform);
-}
-
-function buildCloudinarySrcSet(secureUrl, options) {
-  if (!isCloudinaryUrl(secureUrl)) return undefined;
-
-  const {
-    widths = [],
-    crop = "limit",
-    gravity = "auto",
-    height,
-    quality = "auto",
-    format = "auto"
-  } = options || {};
-
-  const normalizedWidths = Array.from(
-    new Set(widths.filter((value) => Number.isFinite(value) && value > 0))
-  ).sort((a, b) => a - b);
-
-  if (!normalizedWidths.length) return undefined;
-
-  return normalizedWidths
-    .map((width) => {
-      const parts = [`c_${crop}`, `w_${width}`];
-
-      if (crop === "fill") {
-        parts.push(`g_${gravity}`);
-      }
-
-      if (Number.isFinite(height) && height > 0) {
-        parts.push(`h_${height}`);
-      }
-
-      parts.push(`f_${format}`, `q_${quality}`);
-      return `${injectCloudinaryTransform(secureUrl, parts.join(","))} ${width}w`;
-    })
-    .join(", ");
-}
+const optimizeCloudinaryUrl = makeCloudinaryOptimizer(
+  {
+    thumb: "c_fill,g_auto,w_640,h_420,f_auto,q_auto",
+    full: "c_limit,w_2000,f_auto,q_auto",
+    preview: "c_limit,w_1440,f_auto,q_auto",
+    panel: "c_fill,g_auto,w_1200,h_760,f_auto,q_auto"
+  },
+  "panel"
+);
 
 function getPanelThumbSizes(imageCount = 1) {
   if (imageCount <= 1) {
@@ -276,67 +250,6 @@ function buildAiPayload(post, details) {
 
 function getAiLocationLabel(post, details) {
   return details?.locationName || post?.locationName || "this location";
-}
-
-
-const PLACE_CATEGORY_UI = {
-  historical: {
-    label: "Historical",
-    icon: "🏛️",
-    shortLabel: "H",
-    badge: "bg-stone-100 text-stone-700 ring-stone-200"
-  },
-  religious: {
-    label: "Religious",
-    icon: "🕍",
-    shortLabel: "R",
-    badge: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200"
-  },
-  nature: {
-    label: "Nature",
-    icon: "🌿",
-    shortLabel: "N",
-    badge: "bg-green-50 text-green-700 ring-green-200"
-  },
-  entertainment: {
-    label: "Entertainment",
-    icon: "🎭",
-    shortLabel: "E",
-    badge: "bg-indigo-50 text-indigo-700 ring-indigo-200"
-  },
-  food_drink: {
-    label: "Food & Drink",
-    icon: "🍽️",
-    shortLabel: "F",
-    badge: "bg-orange-50 text-orange-700 ring-orange-200"
-  },
-  shopping: {
-    label: "Shopping",
-    icon: "🛍️",
-    shortLabel: "S",
-    badge: "bg-pink-50 text-pink-700 ring-pink-200"
-  },
-  urban_landmark: {
-    label: "Urban Landmark",
-    icon: "🏙️",
-    shortLabel: "U",
-    badge: "bg-cyan-50 text-cyan-700 ring-cyan-200"
-  },
-  other: {
-    label: "Other",
-    icon: "📍",
-    shortLabel: "O",
-    badge: "bg-slate-100 text-slate-700 ring-slate-200"
-  }
-};
-
-function normalizePlaceCategory(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  return Object.prototype.hasOwnProperty.call(PLACE_CATEGORY_UI, normalized) ? normalized : "other";
-}
-
-function getPlaceCategoryUi(category) {
-  return PLACE_CATEGORY_UI[normalizePlaceCategory(category)] || PLACE_CATEGORY_UI.other;
 }
 
 function getPostMarkerIcon(sentiment, placeCategory, isActive = false) {
@@ -464,43 +377,74 @@ function Lightbox({ images, currentIndex, onClose, onPrev, onNext, title }) {
   const touchStartXRef = useRef(null);
   const touchDeltaXRef = useRef(0);
 
+  const onCloseRef = useRef(onClose);
+  const onPrevRef = useRef(onPrev);
+  const onNextRef = useRef(onNext);
+
   useEffect(() => {
-    if (currentIndex < 0) return undefined;
+      onCloseRef.current = onClose;
+      onPrevRef.current = onPrev;
+      onNextRef.current = onNext;
+    }, [onClose, onPrev, onNext]);
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const activeImage =
+  currentIndex >= 0 && Array.isArray(images) ? images[currentIndex] : null;
 
-    const onKeyDown = (e) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose?.();
-        return;
-      }
+const isLightboxOpen = Boolean(activeImage);
 
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        onPrev?.();
-        return;
-      }
+useEffect(() => {
+  if (!isLightboxOpen) return undefined;
 
-      if (e.key === "ArrowRight") {
-        e.preventDefault();
-        onNext?.();
-      }
-    };
+  const previousOverflow = document.body.style.overflow;
+  const previousPaddingRight = document.body.style.paddingRight;
 
-    document.addEventListener("keydown", onKeyDown);
-    requestAnimationFrame(() => dialogRef.current?.focus());
+  const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+  const currentPaddingRight =
+    Number.parseFloat(window.getComputedStyle(document.body).paddingRight) || 0;
 
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [currentIndex, onClose, onPrev, onNext]);
+  document.body.style.overflow = "hidden";
 
-  if (currentIndex < 0 || !Array.isArray(images) || !images[currentIndex]) return null;
+  if (scrollbarWidth > 0) {
+    document.body.style.paddingRight = `${currentPaddingRight + scrollbarWidth}px`;
+  }
 
-  const image = images[currentIndex];
+  const onKeyDown = (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onCloseRef.current?.();
+      return;
+    }
+
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      onPrevRef.current?.();
+      return;
+    }
+
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      onNextRef.current?.();
+    }
+  };
+
+  document.addEventListener("keydown", onKeyDown);
+
+  const focusFrame = window.requestAnimationFrame(() => {
+    dialogRef.current?.focus();
+  });
+
+  return () => {
+    window.cancelAnimationFrame(focusFrame);
+    document.body.style.overflow = previousOverflow;
+    document.body.style.paddingRight = previousPaddingRight;
+    document.removeEventListener("keydown", onKeyDown);
+  };
+}, [isLightboxOpen]);
+
+  if (!activeImage) return null;
+  if (typeof document === "undefined") return null;
+
+  const image = activeImage;
   const alt = title ? `${title} image ${currentIndex + 1}` : `Post image ${currentIndex + 1}`;
   const srcSet = buildCloudinarySrcSet(image.secureUrl, {
     widths: [640, 960, 1280, 1600, 2000],
@@ -536,9 +480,9 @@ function Lightbox({ images, currentIndex, onClose, onPrev, onNext, title }) {
     }
   }
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[1600] flex items-center justify-center bg-black/90 px-3 py-4 sm:px-4 sm:py-6"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 px-3 py-4 sm:px-4 sm:py-6"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose?.();
       }}
@@ -606,7 +550,8 @@ function Lightbox({ images, currentIndex, onClose, onPrev, onNext, title }) {
           {currentIndex + 1} / {images.length}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -1052,7 +997,7 @@ export default function MapPage() {
   const detailsReqIdRef = useRef(0);
   const detailsCacheRef = useRef(new Map());
 
-  const aiAbortRef = useRef(null);
+  const aiRequestRef = useRef(null);
   const aiReqIdRef = useRef(0);
 
   const lastReverseToastAtRef = useRef(0);
@@ -1068,6 +1013,26 @@ export default function MapPage() {
         ...patch
       }
     }));
+  }
+
+  function resetLoadingAiState(postId) {
+    if (!postId) return;
+
+    setAiByPostId((prev) => {
+      const current = prev[postId];
+      if (!current || current.status !== "loading") {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [postId]: {
+          ...current,
+          status: current.content ? "ready" : "idle",
+          error: ""
+        }
+      };
+    });
   }
 
   function toastReverseOnce(msg) {
@@ -1089,14 +1054,22 @@ export default function MapPage() {
       if (reverseAbortRef.current) reverseAbortRef.current.abort();
       if (postsAbortRef.current) postsAbortRef.current.abort();
       if (detailsAbortRef.current) detailsAbortRef.current.abort();
-      if (aiAbortRef.current) aiAbortRef.current.abort();
+
+      if (aiRequestRef.current?.controller) {
+        aiRequestRef.current.controller.abort();
+        resetLoadingAiState(aiRequestRef.current.postId);
+        aiRequestRef.current = null;
+      }
     };
   }, []);
 
   useEffect(() => {
     return () => {
-      if (aiAbortRef.current) aiAbortRef.current.abort();
-      aiAbortRef.current = null;
+      if (aiRequestRef.current?.controller) {
+        aiRequestRef.current.controller.abort();
+        resetLoadingAiState(aiRequestRef.current.postId);
+        aiRequestRef.current = null;
+      }
     };
   }, [selectedPost?.id]);
 
@@ -1117,15 +1090,17 @@ export default function MapPage() {
   }, [lightboxIndex]);
 
   const center = useMemo(() => {
-    if (selectedPlace?.lat != null && selectedPlace?.lng != null) {
-      return [Number(selectedPlace.lat), Number(selectedPlace.lng)];
-    }
+  const selectedCoords = getFiniteLatLng(selectedPlace?.lat, selectedPlace?.lng);
+  if (selectedCoords) {
+    return [selectedCoords.lat, selectedCoords.lng];
+  }
 
-    if (marker?.lat != null && marker?.lng != null) {
-      return [marker.lat, marker.lng];
-    }
+  const markerCoords = getFiniteLatLng(marker?.lat, marker?.lng);
+  if (markerCoords) {
+    return [markerCoords.lat, markerCoords.lng];
+  }
 
-    return INITIAL_CENTER;
+  return INITIAL_CENTER;
   }, [selectedPlace, marker]);
 
   const zoom = useMemo(() => {
@@ -1141,8 +1116,10 @@ export default function MapPage() {
   useEffect(() => {
     if (selectedPlace?.lat == null || selectedPlace?.lng == null) return;
 
-    const lat = Number(selectedPlace.lat);
-    const lng = Number(selectedPlace.lng);
+    const coords = getFiniteLatLng(selectedPlace.lat, selectedPlace.lng);
+    if (!coords) return;
+
+    const { lat, lng } = coords;
 
     if (selectionSource === "search") {
       setSelectedPost(null);
@@ -1156,9 +1133,10 @@ export default function MapPage() {
         detailsAbortRef.current = null;
       }
 
-      if (aiAbortRef.current) {
-        aiAbortRef.current.abort();
-        aiAbortRef.current = null;
+      if (aiRequestRef.current?.controller) {
+        aiRequestRef.current.controller.abort();
+        resetLoadingAiState(aiRequestRef.current.postId);
+        aiRequestRef.current = null;
       }
     }
 
@@ -1256,16 +1234,22 @@ export default function MapPage() {
   }, [selectedPost?.id]);
 
   const selectedAiState = selectedPost?.id
-    ? aiByPostId[selectedPost.id] || getDefaultAiState()
-    : getDefaultAiState();
+    ? aiByPostId[selectedPost.id] || DEFAULT_AI_STATE_OBJECT
+    : DEFAULT_AI_STATE_OBJECT;
 
   useEffect(() => {
     const cooldownUntil = selectedAiState?.cooldownUntil || 0;
-    if (!cooldownUntil || cooldownUntil <= Date.now()) return;
+    if (!cooldownUntil || cooldownUntil <= Date.now()) return undefined;
 
     setTickNowMs(Date.now());
+
     const id = window.setInterval(() => {
-      setTickNowMs(Date.now());
+      const now = Date.now();
+      setTickNowMs(now);
+
+      if (cooldownUntil <= now) {
+        window.clearInterval(id);
+      }
     }, 1000);
 
     return () => window.clearInterval(id);
@@ -1278,6 +1262,10 @@ export default function MapPage() {
     const remaining = Math.ceil((cooldownUntil - tickNowMs) / 1000);
     return Math.max(0, remaining);
   }, [selectedAiState?.cooldownUntil, tickNowMs]);
+
+  const markerCoordsForRender = useMemo(() => {
+    return marker ? getFiniteLatLng(marker.lat, marker.lng) : null;
+  }, [marker]);
 
   const handleViewportChange = useCallback((nextBounds) => {
     if (!nextBounds) return;
@@ -1307,11 +1295,14 @@ export default function MapPage() {
       signal
     });
 
+    const rawPosts = Array.isArray(res?.data?.posts) ? res.data.posts : [];
+    const posts = rawPosts.filter((post) => post?.id != null && getFiniteLatLng(post.latitude, post.longitude));
+
     return {
-      posts: Array.isArray(res?.data?.posts) ? res.data.posts : [],
+      posts,
       countInBounds: Number.isFinite(Number(res?.data?.countInBounds))
         ? Number(res.data.countInBounds)
-        : 0
+        : posts.length
     };
   }
 
@@ -1321,11 +1312,9 @@ export default function MapPage() {
     const postId = post.id;
     const payload = buildAiPayload(post, details);
 
-    if (
-      !payload.locationName ||
-      !Number.isFinite(payload.latitude) ||
-      !Number.isFinite(payload.longitude)
-    ) {
+    const payloadCoords = getFiniteLatLng(payload.latitude, payload.longitude);
+
+    if (!payload.locationName || !payloadCoords) {
       patchAiState(postId, {
         status: "error",
         error: "Location data is incomplete for this post.",
@@ -1336,12 +1325,26 @@ export default function MapPage() {
       return;
     }
 
-    if (aiAbortRef.current) aiAbortRef.current.abort();
+    const safePayload = {
+      ...payload,
+      latitude: payloadCoords.lat,
+      longitude: payloadCoords.lng
+    };
+
+    if (aiRequestRef.current?.controller) {
+      aiRequestRef.current.controller.abort();
+      resetLoadingAiState(aiRequestRef.current.postId);
+      aiRequestRef.current = null;
+    }
 
     const controller = new AbortController();
-    aiAbortRef.current = controller;
-
     const reqId = (aiReqIdRef.current += 1);
+
+    aiRequestRef.current = {
+      controller,
+      postId,
+      reqId
+    };
 
     patchAiState(postId, {
       status: "loading",
@@ -1349,7 +1352,7 @@ export default function MapPage() {
     });
 
     try {
-      const res = await api.post("/ai/learn-more", payload, {
+      const res = await api.post("/ai/learn-more", safePayload, {
         timeout: 15000,
         signal: controller.signal
       });
@@ -1415,8 +1418,11 @@ export default function MapPage() {
         });
       }
     } finally {
-      if (reqId === aiReqIdRef.current && aiAbortRef.current === controller) {
-        aiAbortRef.current = null;
+      if (
+        aiRequestRef.current?.controller === controller &&
+        aiRequestRef.current?.reqId === reqId
+      ) {
+        aiRequestRef.current = null;
       }
     }
   }
@@ -1494,8 +1500,14 @@ export default function MapPage() {
   }, [debouncedViewportBounds]);
 
   async function onMapPick(latlng) {
-    const lat = Number(latlng.lat);
-    const lng = Number(latlng.lng);
+    const coords = getFiniteLatLng(latlng?.lat, latlng?.lng);
+
+    if (!coords) {
+      toastReverseOnce("Invalid map coordinates. Please try another point.");
+      return;
+    }
+
+    const { lat, lng } = coords;
 
     setSelectedPost(null);
     setMarker({ lat, lng });
@@ -1582,7 +1594,7 @@ export default function MapPage() {
 
   return (
     <>
-      <div className="relative h-[calc(100vh-72px)] w-full">
+      <div className="map-page-shell relative w-full">
         <MapContainer center={center} zoom={zoom} className="h-full w-full bg-slate-900">
           <FlyToCenter center={center} zoom={zoom} />
           <TileLayer attribution={ATTRIBUTION} url={TILE_URL} />
@@ -1597,11 +1609,22 @@ export default function MapPage() {
             zoomToBoundsOnClick
             iconCreateFunction={createClusterIcon}
           >
-            {mapPosts.map((post) => (
+            {mapPosts.map((post) => {
+            const coords = getFiniteLatLng(post?.latitude, post?.longitude);
+
+            if (!post?.id || !coords) {
+              return null;
+            }
+
+            return (
               <Marker
                 key={post.id}
-                position={[Number(post.latitude), Number(post.longitude)]}
-                icon={getPostMarkerIcon(post.sentiment, post.placeCategory, selectedPost?.id === post.id)}
+                position={[coords.lat, coords.lng]}
+                icon={getPostMarkerIcon(
+                  post.sentiment,
+                  post.placeCategory,
+                  selectedPost?.id === post.id
+                )}
                 postSentiment={post.sentiment}
                 eventHandlers={{
                   click: () => {
@@ -1610,20 +1633,21 @@ export default function MapPage() {
                 }}
               >
                 <Tooltip direction="top" offset={[0, -22]} opacity={1}>
-                  {post.title}
+                  {post.title || "Untitled post"}
                 </Tooltip>
               </Marker>
-            ))}
+            );
+          })}
           </MarkerClusterGroup>
 
-          {marker && (
-            <Marker position={[marker.lat, marker.lng]}>
+          {markerCoordsForRender && (
+            <Marker position={[markerCoordsForRender.lat, markerCoordsForRender.lng]}>
               <Popup>
                 <div className="text-sm">
                   <div className="font-semibold">Selected</div>
                   <div className="mt-1">{label || "—"}</div>
                   <div className="mt-2 text-slate-600">
-                    {marker.lat.toFixed(5)}, {marker.lng.toFixed(5)}
+                    {markerCoordsForRender.lat.toFixed(5)}, {markerCoordsForRender.lng.toFixed(5)}
                   </div>
                 </div>
               </Popup>

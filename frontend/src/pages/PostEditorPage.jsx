@@ -60,6 +60,17 @@ function isFiniteNumber(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+function isValidCoordinatePair(lat, lng) {
+  return (
+    isFiniteNumber(lat) &&
+    isFiniteNumber(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180
+  );
+}
+
 function parseCoord(value) {
   if (value === null || value === undefined || value === "") return null;
 
@@ -157,27 +168,6 @@ function buildSnapshot(form, images) {
       publicId: img.publicId || ""
     }))
   });
-}
-
-function getPreviewTone(sentiment) {
-  if (sentiment === "positive") {
-    return {
-      shell: "border-emerald-200 bg-emerald-50 text-emerald-700",
-      label: "Positive"
-    };
-  }
-
-  if (sentiment === "negative") {
-    return {
-      shell: "border-rose-200 bg-rose-50 text-rose-700",
-      label: "Negative"
-    };
-  }
-
-  return {
-    shell: "border-amber-200 bg-amber-50 text-amber-700",
-    label: "Neutral"
-  };
 }
 
 function getTitleMessage(value, externalError = "") {
@@ -380,7 +370,8 @@ function LocationAutocomplete({
   const [activeIndex, setActiveIndex] = useState(-1);
 
   const abortRef = useRef(null);
-  const skipNextSearchRef = useRef(false);
+  const requestIdRef = useRef(0);
+  const suppressSearchForQueryRef = useRef("");
   const wrapRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -423,24 +414,47 @@ function LocationAutocomplete({
   }, []);
 
   useEffect(() => {
-    if (skipNextSearchRef.current) {
-      skipNextSearchRef.current = false;
-      return;
+    const suppressedQuery = suppressSearchForQueryRef.current;
+
+    if (suppressedQuery) {
+      if (debouncedTrimmed === suppressedQuery) {
+        suppressSearchForQueryRef.current = "";
+        setItems([]);
+        setError("");
+        setHasSearched(false);
+        setIsLoading(false);
+        setIsOpen(false);
+        setActiveIndex(-1);
+        return;
+      }
+
+      suppressSearchForQueryRef.current = "";
     }
+
+    const requestId = (requestIdRef.current += 1);
 
     if (!canSearch || disabled) {
       setItems([]);
       setHasSearched(false);
       setError("");
+
       if (abortRef.current) abortRef.current.abort();
       abortRef.current = null;
+
+      setIsLoading(false);
+      setIsOpen(false);
+      setActiveIndex(-1);
       return;
     }
+
+    let cancelled = false;
 
     setIsOpen(true);
 
     if (abortRef.current) abortRef.current.abort();
-    abortRef.current = new AbortController();
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     setIsLoading(true);
     setError("");
@@ -451,8 +465,12 @@ function LocationAutocomplete({
         const res = await api.post(
           "/geocode/search",
           { query: debouncedTrimmed },
-          { timeout: 15000, signal: abortRef.current.signal }
+          { timeout: 15000, signal: controller.signal }
         );
+
+        if (cancelled || requestId !== requestIdRef.current) {
+          return;
+        }
 
         const results = Array.isArray(res?.data?.results) ? res.data.results : [];
         setItems(results);
@@ -466,6 +484,10 @@ function LocationAutocomplete({
           return;
         }
 
+        if (cancelled || requestId !== requestIdRef.current) {
+          return;
+        }
+
         const status = err?.response?.status;
         const message = err?.response?.data?.message;
 
@@ -476,21 +498,35 @@ function LocationAutocomplete({
         setItems([]);
         setActiveIndex(-1);
       } finally {
-        setIsLoading(false);
+        if (!cancelled && requestId === requestIdRef.current) {
+          setIsLoading(false);
+        }
+
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+        }
       }
     })();
 
     return () => {
-      if (abortRef.current) abortRef.current.abort();
+      cancelled = true;
+      controller.abort();
+
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
     };
   }, [debouncedTrimmed, canSearch, disabled]);
 
   function handleSelect(item) {
-    skipNextSearchRef.current = true;
+    const label = getDisplayLabel(item);
+
+    suppressSearchForQueryRef.current = label.trim();
+    requestIdRef.current += 1;
+
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = null;
 
-    const label = getDisplayLabel(item);
     onValueChange(label);
     onSelectPlace?.(item);
 
@@ -568,7 +604,8 @@ function LocationAutocomplete({
           <button
             type="button"
             onClick={() => {
-              skipNextSearchRef.current = false;
+              suppressSearchForQueryRef.current = "";
+              requestIdRef.current += 1;
               if (abortRef.current) abortRef.current.abort();
               abortRef.current = null;
 
@@ -716,8 +753,7 @@ export default function PostEditorPage() {
 
   const hasResolvedLocation = useMemo(() => {
     return (
-      isFiniteNumber(form.latitude) &&
-      isFiniteNumber(form.longitude) &&
+      isValidCoordinatePair(form.latitude, form.longitude) &&
       Boolean(form.locationName.trim())
     );
   }, [form.latitude, form.longitude, form.locationName]);
@@ -726,21 +762,21 @@ export default function PostEditorPage() {
   const nonLocationControlsDisabled = isSubmitting || createModeLocked;
 
   const previewSentiment = isEdit ? savedSentiment : "neutral";
-  const previewTone = useMemo(() => getPreviewTone(previewSentiment), [previewSentiment]);
   const sentimentMarkerIcon = useMemo(
     () => createSentimentMarkerIcon(previewSentiment),
     [previewSentiment]
   );
 
   const mapCenter = useMemo(() => {
-    if (isFiniteNumber(form.latitude) && isFiniteNumber(form.longitude)) {
+    if (isValidCoordinatePair(form.latitude, form.longitude)) {
       return [form.latitude, form.longitude];
     }
+
     return DEFAULT_CENTER;
   }, [form.latitude, form.longitude]);
 
   const mapZoom = useMemo(() => {
-    if (isFiniteNumber(form.latitude) && isFiniteNumber(form.longitude)) return 13;
+    if (isValidCoordinatePair(form.latitude, form.longitude)) return 13;
     return 6;
   }, [form.latitude, form.longitude]);
 
@@ -799,7 +835,16 @@ export default function PostEditorPage() {
 
     const lat = Number(place.lat);
     const lng = Number(place.lng);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng) ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180
+    ) {
+      return;
+    }
 
     const locationName =
       String(place.locationName || "").trim() ||
@@ -883,10 +928,22 @@ export default function PostEditorPage() {
 
   const resolveLocationFromCoords = useCallback(
     async (lat, lng, { fallbackLabel = "Dropped pin" } = {}) => {
-      const numericLat = Number(lat);
-      const numericLng = Number(lng);
+    const numericLat = Number(lat);
+    const numericLng = Number(lng);
 
-      setForm((prev) => ({
+    if (
+      !Number.isFinite(numericLat) ||
+      !Number.isFinite(numericLng) ||
+      numericLat < -90 ||
+      numericLat > 90 ||
+      numericLng < -180 ||
+      numericLng > 180
+    ) {
+      toast.error("Invalid map coordinates. Please try selecting the location again.");
+      return;
+    }
+
+    setForm((prev) => ({
         ...prev,
         latitude: numericLat,
         longitude: numericLng
@@ -1306,6 +1363,24 @@ export default function PostEditorPage() {
         return;
       }
 
+      const submittedImages = images.map((item) => ({
+        secureUrl: String(item.secureUrl || "").trim(),
+        publicId: String(item.publicId || "").trim()
+      }));
+
+      const hasInvalidUploadedImage = submittedImages.some(
+        (item) => !item.secureUrl || !item.publicId
+      );
+
+      if (hasInvalidUploadedImage) {
+        setFieldErrors((prev) => ({
+          ...prev,
+          images: "One or more images are missing upload data. Please retry or remove them."
+        }));
+        toast.error("One or more images are missing upload data. Please retry or remove them.");
+        return;
+      }
+
       const payload = {
         title: form.title.trim(),
         content: form.content.trim(),
@@ -1319,42 +1394,52 @@ export default function PostEditorPage() {
         osmSubtype: form.osmSubtype?.trim() || "",
         addressType: form.addressType?.trim() || "",
         privacy: form.privacy,
-        images: images.map((item) => ({
-          secureUrl: item.secureUrl,
-          publicId: item.publicId
-        }))
+        images: submittedImages
       };
 
       setIsSubmitting(true);
+      let didNavigate = false;
       setFieldErrors({});
 
       if (submitAbortRef.current) submitAbortRef.current.abort();
-      submitAbortRef.current = new AbortController();
+
+      const controller = new AbortController();
+      submitAbortRef.current = controller;
 
       try {
         const savedPost = isEdit
-          ? await updatePost(id, payload, { signal: submitAbortRef.current.signal })
-          : await createPost(payload, { signal: submitAbortRef.current.signal });
+          ? await updatePost(id, payload, { signal: controller.signal })
+          : await createPost(payload, { signal: controller.signal });
+
+        if (!savedPost?.id) {
+          throw new Error("Invalid saved post response.");
+        }
 
         toast.success(isEdit ? "Post updated successfully!" : "Post created successfully!");
 
         if (isEdit) {
-          navigate(`/posts/${savedPost.id}`, { replace: true });
+          didNavigate = true;
+          navigate("/map", { replace: true });
         } else {
+          const savedLat = Number(savedPost.latitude);
+          const savedLng = Number(savedPost.longitude);
+
           setSelectedPlace(
             {
-              lat: savedPost.latitude,
-              lng: savedPost.longitude,
-              locationName: savedPost.locationName,
-              displayName: form.displayName?.trim() || savedPost.locationName,
-              city: savedPost.city || "",
-              country: savedPost.country || "",
+              lat: Number.isFinite(savedLat) ? savedLat : payload.latitude,
+              lng: Number.isFinite(savedLng) ? savedLng : payload.longitude,
+              locationName: savedPost.locationName || payload.locationName,
+              displayName: form.displayName?.trim() || savedPost.locationName || payload.locationName,
+              city: savedPost.city || payload.city || "",
+              country: savedPost.country || payload.country || "",
               osmClass: form.osmClass?.trim() || "",
               osmSubtype: form.osmSubtype?.trim() || "",
               addressType: form.addressType?.trim() || ""
             },
             "post-create"
           );
+
+          didNavigate = true;
           navigate("/map", { replace: true });
         }
       } catch (err) {
@@ -1402,9 +1487,13 @@ export default function PostEditorPage() {
 
         if (status === 401) {
           toast.error("Session expired. Please login again.");
-        } else if (status === 404) {
+       } else if (status === 404) {
           toast.error(isEdit ? "This post doesn't exist or has been deleted." : "Route not found.");
-          if (isEdit) navigate("/map", { replace: true });
+
+          if (isEdit) {
+            didNavigate = true;
+            navigate("/map", { replace: true });
+          }
         } else if (status === 409) {
           toast.error(data?.message || "One or more images are already used by another post.");
         } else if (data?.message) {
@@ -1415,8 +1504,13 @@ export default function PostEditorPage() {
           );
         }
       } finally {
-        setIsSubmitting(false);
-        submitAbortRef.current = null;
+          if (!didNavigate) {
+            setIsSubmitting(false);
+        }
+
+        if (submitAbortRef.current === controller) {
+          submitAbortRef.current = null;
+        }
       }
     },
     [form, id, images, isEdit, localValidationErrors, navigate, setSelectedPlace]
@@ -1785,12 +1879,18 @@ export default function PostEditorPage() {
           >
             <div className="px-2 pb-3 pt-1">
               <h2 className="text-xl font-semibold text-slate-900">Map Preview</h2>
-              <p className="mt-1 text-sm text-slate-500">Drag the pin to adjust location</p>
+              <p className="mt-1 text-sm text-slate-500">Tap the map or drag the pin to adjust location</p>
             </div>
 
             <div className="overflow-hidden rounded-[24px] border border-slate-200">
               <div className="h-[360px] sm:h-[420px] md:h-[520px] lg:h-[680px]">
-                <MapContainer center={mapCenter} zoom={mapZoom} scrollWheelZoom className="h-full w-full">
+                <MapContainer
+                  center={mapCenter}
+                  zoom={mapZoom}
+                  scrollWheelZoom={!L.Browser.mobile}
+                  dragging={!L.Browser.mobile}
+                  className="h-full w-full"
+                >
                   <MapSyncView center={mapCenter} zoom={mapZoom} />
                   <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />
                   <MapInteraction
@@ -1801,7 +1901,7 @@ export default function PostEditorPage() {
                     }}
                   />
 
-                  {isFiniteNumber(form.latitude) && isFiniteNumber(form.longitude) && (
+                  {isValidCoordinatePair(form.latitude, form.longitude) && (
                     <Marker
                       icon={sentimentMarkerIcon}
                       position={[form.latitude, form.longitude]}

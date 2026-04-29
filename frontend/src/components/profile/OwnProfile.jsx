@@ -2,6 +2,8 @@
 import React, { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { formatSentimentScore, getSentimentUi } from "../../utils/sentimentUi.js";
+import { getPlaceCategoryUi } from "../../utils/placeCategoryUi.js";
+import { makeCloudinaryOptimizer } from "../../utils/cloudinaryImage.js";
 
 function formatMemberSince(value) {
   if (!value) return "Member since —";
@@ -26,18 +28,13 @@ function formatPostDate(value) {
   }).format(date);
 }
 
-function optimizeCloudinaryUrl(secureUrl, variant = "card") {
-  if (typeof secureUrl !== "string" || !secureUrl.includes("/upload/")) {
-    return secureUrl || "";
-  }
-
-  const transform =
-    variant === "thumb"
-      ? "c_fill,w_900,h_560,g_auto,f_auto,q_auto"
-      : "c_fill,w_1400,h_900,g_auto,f_auto,q_auto";
-
-  return secureUrl.replace("/upload/", `/upload/${transform}/`);
-}
+const optimizeCloudinaryUrl = makeCloudinaryOptimizer(
+  {
+    thumb: "c_fill,w_900,h_560,g_auto,f_auto,q_auto",
+    card: "c_fill,w_1400,h_900,g_auto,f_auto,q_auto"
+  },
+  "card"
+);
 
 function getAvatarInitials(user) {
   const source = String(user?.username || user?.email || "U").trim();
@@ -75,59 +72,6 @@ function getPostLocation(post) {
   }
 
   return post?.locationName || "Unknown location";
-}
-
-
-const PLACE_CATEGORY_UI = {
-  historical: {
-    label: "Historical",
-    icon: "🏛️",
-    shell: "bg-stone-100 text-stone-700 ring-stone-200"
-  },
-  religious: {
-    label: "Religious",
-    icon: "🕍",
-    shell: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200"
-  },
-  nature: {
-    label: "Nature",
-    icon: "🌿",
-    shell: "bg-green-50 text-green-700 ring-green-200"
-  },
-  entertainment: {
-    label: "Entertainment",
-    icon: "🎭",
-    shell: "bg-indigo-50 text-indigo-700 ring-indigo-200"
-  },
-  food_drink: {
-    label: "Food & Drink",
-    icon: "🍽️",
-    shell: "bg-orange-50 text-orange-700 ring-orange-200"
-  },
-  shopping: {
-    label: "Shopping",
-    icon: "🛍️",
-    shell: "bg-pink-50 text-pink-700 ring-pink-200"
-  },
-  urban_landmark: {
-    label: "Urban Landmark",
-    icon: "🏙️",
-    shell: "bg-cyan-50 text-cyan-700 ring-cyan-200"
-  },
-  other: {
-    label: "Other",
-    icon: "📍",
-    shell: "bg-slate-100 text-slate-700 ring-slate-200"
-  }
-};
-
-function normalizePlaceCategory(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  return Object.prototype.hasOwnProperty.call(PLACE_CATEGORY_UI, normalized) ? normalized : "other";
-}
-
-function getPlaceCategoryUi(category) {
-  return PLACE_CATEGORY_UI[normalizePlaceCategory(category)] || PLACE_CATEGORY_UI.other;
 }
 
 function ProfileStatCard({ label, value, tone = "slate" }) {
@@ -438,13 +382,6 @@ export default function OwnProfile({
                 Your latest memories appear here. Open any card to see the full post.
               </p>
             </div>
-
-            <Link
-              to="/feed"
-              className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-            >
-              View All Posts
-            </Link>
           </div>
 
           {safeRecentPosts.length === 0 ? (

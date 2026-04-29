@@ -96,6 +96,7 @@ export default function RegisterPage() {
     setErrorMsg("");
     setFieldErrors({});
     setIsSubmitting(true);
+    let didNavigate = false;
 
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = new AbortController();
@@ -107,6 +108,7 @@ export default function RegisterPage() {
       );
 
       toast.success("Account created!");
+      didNavigate = true;
       navigate("/feed", { replace: true });
     } catch (err) {
       if (err?.name === "CanceledError" || err?.code === "ERR_CANCELED") return;
@@ -132,7 +134,9 @@ export default function RegisterPage() {
 
       setErrorMsg("Network error. Please check your connection and try again.");
     } finally {
-      setIsSubmitting(false);
+      if (!didNavigate) {
+        setIsSubmitting(false);
+      }
     }
   }
 
