@@ -17,6 +17,34 @@ function isValidEmail(v) {
 const HERO_BG_URL =
   "https://images.unsplash.com/photo-1762118817730-955d832b2cb7?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxhZXJpYWwlMjBiZWFjaCUyMHRyb3BpY2FsJTIwaXNsYW5kJTIwdHVycXVvaXNlJTIwd2F0ZXJ8ZW58MXx8fHwxNzcyMzgwNDg0fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral";
 
+
+function LoginLocationIcon({ className = "h-8 w-8" }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      stroke="currentColor"
+      strokeWidth="2.25"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 21s6.8-4.6 6.8-10.8a6.8 6.8 0 1 0-13.6 0C5.2 16.4 12 21 12 21Z" />
+      <circle cx="12" cy="10.2" r="2.35" />
+    </svg>
+  );
+}
+
+function getInputClass(hasError = false) {
+  return [
+    "w-full rounded-full border bg-white px-12 py-2.5 pr-12 text-sm text-slate-900 shadow-[0_12px_32px_rgba(15,23,42,0.07)] outline-none transition-all duration-300 placeholder:text-slate-400 focus:ring-0 sm:px-14 sm:py-2.5 sm:text-base",
+    hasError
+      ? "border-rose-300 hover:border-rose-300 focus:border-rose-300 focus:bg-rose-50 focus:shadow-[0_18px_42px_rgba(225,29,72,0.18)]"
+      : "border-slate-200 hover:border-slate-300 hover:shadow-[0_16px_36px_rgba(15,118,110,0.22)] focus:border-slate-400 focus:bg-[#eff7f6] focus:shadow-[0_22px_52px_rgba(15,118,110,0.44)]"
+  ].join(" ");
+}
+
 export default function LoginPage() {
   const { login, isAuthenticated, isInitializing } = useAuth();
   const navigate = useNavigate();
@@ -131,44 +159,39 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div className="flex items-center justify-center px-4 py-6 lg:py-10">
+        <div className="flex items-center justify-center bg-[#eff7f6] px-4 py-4 lg:py-6 xl:py-8">
           <div className="w-full max-w-md">
-            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 sm:p-8">
+            <div className="rounded-[30px] border border-cyan-100/80 bg-white p-5 shadow-[0_18px_42px_rgba(8,145,178,0.12),0_0_34px_rgba(16,185,129,0.08)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_22px_52px_rgba(8,145,178,0.18),0_0_46px_rgba(16,185,129,0.16)] focus-within:-translate-y-0.5 focus-within:border-cyan-200 focus-within:ring-4 focus-within:ring-cyan-200/55 focus-within:shadow-[0_22px_52px_rgba(15,118,110,0.30),0_0_42px_rgba(16,185,129,0.22)] sm:p-6">
               <div className="flex items-center justify-center">
-                <div className="h-12 w-12 rounded-2xl bg-emerald-50 flex items-center justify-center">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    className="h-6 w-6 text-emerald-600"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M12 3l7 7-7 11-7-11 7-7z" />
-                    <path d="M12 8l3 3-3 5-3-5 3-3z" />
-                  </svg>
+                <div className="flex h-[56px] w-[56px] items-center justify-center rounded-[20px] bg-gradient-to-br from-cyan-500 to-emerald-500 text-white shadow-[0_18px_42px_rgba(8,145,178,0.28),0_0_34px_rgba(16,185,129,0.20)] ring-4 ring-cyan-50">
+                  <LoginLocationIcon className="h-7 w-7" />
                 </div>
               </div>
 
-              <h1 className="mt-5 text-center text-3xl font-semibold text-slate-900">Welcome Back</h1>
-              <p className="mt-2 text-center text-slate-500">Sign in to continue your adventure</p>
+              <h1 className="mt-4 text-center text-3xl font-extrabold leading-[1.02] tracking-[-0.035em] text-slate-950 sm:text-4xl">
+                Welcome Back
+              </h1>
+              <p className="mt-2 text-center text-sm font-semibold leading-6 text-slate-500">
+                Sign in to continue your adventure
+              </p>
 
               {errorMsg && (
                 <div
                   role="alert"
-                  className="mt-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-800 text-sm"
+                  className="mt-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-rose-800 text-sm"
                 >
                   {errorMsg}
                 </div>
               )}
 
-              <form onSubmit={onSubmit} noValidate className="mt-6 space-y-4">
+              <form onSubmit={onSubmit} noValidate className="mt-5 space-y-3">
                 <div>
                   <label htmlFor="email" className="block text-sm font-medium text-slate-700">
                     Email
                   </label>
 
-                  <div className="mt-2 relative">
-                    <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">
+                  <div className="group mt-2 relative">
+                  <span className="pointer-events-none absolute inset-y-0 left-5 flex items-center text-slate-400 transition-colors duration-300 group-focus-within:text-cyan-600">
                       <svg
                         viewBox="0 0 24 24"
                         fill="none"
@@ -192,7 +215,7 @@ export default function LoginPage() {
                       autoComplete="email"
                       placeholder="your.email@example.com"
                       inputMode="email"
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-10 py-3 text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-300"
+                      className={getInputClass(false)}
                     />
                   </div>
                 </div>
@@ -202,8 +225,8 @@ export default function LoginPage() {
                     Password
                   </label>
 
-                  <div className="mt-2 relative">
-                    <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">
+                  <div className="group mt-2 relative">
+                  <span className="pointer-events-none absolute inset-y-0 left-5 flex items-center text-slate-400 transition-colors duration-300 group-focus-within:text-cyan-600">
                       <svg
                         viewBox="0 0 24 24"
                         fill="none"
@@ -226,7 +249,7 @@ export default function LoginPage() {
                       type="password"
                       autoComplete="current-password"
                       placeholder="Enter your password"
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-10 py-3 text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-300"
+                      className={getInputClass(false)}
                     />
                   </div>
                 </div>
@@ -235,24 +258,24 @@ export default function LoginPage() {
                   type="submit"
                   disabled={!canSubmit}
                   className={[
-                    "w-full rounded-xl py-3 font-semibold text-white transition",
+                    "inline-flex min-h-[56px] w-full items-center justify-center rounded-full px-5 py-2.5 text-sm font-bold text-white transition-all duration-300 focus:outline-none active:translate-y-0 sm:text-base",
                     canSubmit
-                      ? "bg-gradient-to-r from-[oklch(43.7%_0.078_188.216)] to-[oklch(39.8%_0.07_227.392)] hover:opacity-90 hover:shadow-md"
-                      : "bg-slate-300 cursor-not-allowed"
+                      ? "bg-gradient-to-r from-cyan-700 via-teal-600 to-emerald-600 shadow-[0_18px_46px_rgba(8,145,178,0.34),0_0_34px_rgba(16,185,129,0.26)] hover:-translate-y-0.5 hover:shadow-[0_24px_60px_rgba(8,145,178,0.48),0_0_46px_rgba(16,185,129,0.40)] focus:-translate-y-0.5 focus:ring-4 focus:ring-teal-300/55 focus:shadow-[0_0_0_7px_rgba(45,212,191,0.24),0_26px_68px_rgba(8,145,178,0.52),0_0_52px_rgba(16,185,129,0.45)]"
+                      : "cursor-not-allowed bg-slate-300 shadow-none"
                   ].join(" ")}
                 >
                   {isSubmitting ? "Logging in…" : "Login"}
                 </button>
               </form>
 
-              <p className="mt-6 text-center text-sm text-slate-600">
+              <p className="mt-4 text-center text-sm text-slate-600">
                 Don&apos;t have an account?{" "}
-                <Link className="font-semibold text-emerald-600 hover:text-emerald-700" to="/register">
+                <Link className="font-extrabold text-teal-700 transition hover:text-teal-800" to="/register">
                   Register
                 </Link>
               </p>
 
-              <p className="mt-6 text-center text-xs text-slate-400">
+              <p className="mt-3 text-center text-xs leading-5 text-slate-400">
                 By signing in, you agree to our{" "}
                 <span className="underline underline-offset-2">Terms of Service</span> and{" "}
                 <span className="underline underline-offset-2">Privacy Policy</span>

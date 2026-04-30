@@ -109,19 +109,20 @@ function pickFirstValidGeocodeResult(results) {
   );
 }
 
-function BrandPinIcon({ className = "h-7 w-7" }) {
+function BrandPinIcon({ className = "h-6 w-6" }) {
   return (
     <svg
       viewBox="0 0 24 24"
       fill="none"
       className={className}
       stroke="currentColor"
-      strokeWidth="2.1"
+      strokeWidth="2.25"
       strokeLinecap="round"
       strokeLinejoin="round"
+      aria-hidden="true"
     >
-      <path d="M12 21s7-4.35 7-11a7 7 0 1 0-14 0c0 6.65 7 11 7 11Z" />
-      <circle cx="12" cy="10" r="2.5" />
+      <path d="M12 21s6.8-4.6 6.8-10.8a6.8 6.8 0 1 0-13.6 0C5.2 16.4 12 21 12 21Z" />
+      <circle cx="12" cy="10.2" r="2.35" />
     </svg>
   );
 }
@@ -990,7 +991,7 @@ export default function NavBar() {
           to="/feed"
           className="group flex min-w-0 shrink-0 items-center gap-3 transition focus:outline-none"
         >
-          <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-cyan-700 via-teal-600 to-emerald-600 text-white shadow-[0_18px_42px_rgba(15,118,110,0.36)] transition-all duration-300 group-hover:-translate-y-0.5 group-hover:shadow-[0_22px_52px_rgba(15,118,110,0.44)] group-focus-visible:-translate-y-0.5 group-focus-visible:ring-4 group-focus-visible:ring-teal-200/70 group-active:translate-y-0 sm:h-[62px] sm:w-[62px]">
+          <span className="inline-flex h-[66px] w-[66px] shrink-0 items-center justify-center rounded-[22px] bg-gradient-to-br from-cyan-500 to-emerald-500 text-white shadow-[0_18px_42px_rgba(8,145,178,0.28),0_0_34px_rgba(16,185,129,0.20)] ring-4 ring-cyan-50 transition-all duration-300 group-hover:-translate-y-0.5 group-hover:shadow-[0_22px_52px_rgba(8,145,178,0.34),0_0_42px_rgba(16,185,129,0.26)] group-focus-visible:-translate-y-0.5 group-focus-visible:shadow-[0_22px_52px_rgba(8,145,178,0.36),0_0_46px_rgba(16,185,129,0.30)] group-active:translate-y-0">
             <BrandPinIcon className="h-8 w-8" />
           </span>
 
@@ -1092,7 +1093,7 @@ export default function NavBar() {
             aria-expanded={open}
             aria-controls={menuId}
             aria-label={`Open account menu for ${displayName}`}
-            className="inline-flex h-[56px] w-[56px] items-center justify-center rounded-full border border-cyan-200/35 bg-slate-50 text-slate-600 shadow-[0_14px_28px_rgba(15,23,42,0.10)] ring-1 ring-cyan-100/60 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-300/55 hover:bg-cyan-50 hover:text-cyan-700 hover:shadow-[0_18px_38px_rgba(8,145,178,0.20),0_0_30px_rgba(16,185,129,0.14)] focus:outline-none focus-visible:-translate-y-0.5 focus-visible:border-cyan-300/70 focus-visible:bg-cyan-50 focus-visible:text-cyan-700 focus-visible:shadow-[0_18px_38px_rgba(8,145,178,0.24),0_0_34px_rgba(16,185,129,0.18)] focus-visible:ring-4 focus-visible:ring-cyan-200/55 active:translate-y-0"
+            className="inline-flex h-[56px] w-[56px] items-center justify-center rounded-full border border-transparent bg-slate-50 text-slate-600 shadow-[0_14px_28px_rgba(15,23,42,0.10)] ring-4 ring-cyan-50 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-300/55 hover:bg-cyan-50 hover:text-cyan-700 hover:shadow-[0_18px_38px_rgba(8,145,178,0.20),0_0_30px_rgba(16,185,129,0.14)] focus:outline-none focus-visible:-translate-y-0.5 focus-visible:border-cyan-300/70 focus-visible:bg-cyan-50 focus-visible:text-cyan-700 focus-visible:shadow-[0_18px_38px_rgba(8,145,178,0.24),0_0_34px_rgba(16,185,129,0.18)] focus-visible:ring-cyan-200/55 active:translate-y-0"
           >
             <UserCircleIcon className="h-6 w-6" />
           </button>

@@ -84,7 +84,8 @@ function formatFeedPostDate(value) {
 const optimizeCloudinaryUrl = makeCloudinaryOptimizer(
   {
     thumb: "c_fill,w_700,h_520,g_auto,f_auto,q_auto",
-    card: "c_fill,w_1400,h_900,g_auto,f_auto,q_auto"
+    card: "c_fill,w_1400,h_900,g_auto,f_auto,q_auto",
+    single: "c_limit,w_1200,f_auto,q_auto"
   },
   "card"
 );
@@ -267,23 +268,48 @@ function SafeFeedImage({ src, alt, className }) {
 }
 
 function FeedFilterPill({ label, active, tone = "dark", disabled = false, onClick }) {
+  const inactiveToneClass =
+    tone === "teal"
+      ? "border-slate-200 bg-white text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.045)] hover:-translate-y-1 hover:scale-[1.015] hover:border-cyan-400 hover:text-slate-800 hover:shadow-[0_24px_58px_rgba(6,182,212,0.30),0_0_46px_rgba(45,212,191,0.28)] focus:-translate-y-1 focus:scale-[1.015] focus:border-cyan-400 focus:text-slate-800 focus:shadow-[0_24px_58px_rgba(6,182,212,0.32),0_0_52px_rgba(45,212,191,0.32)] focus-visible:-translate-y-1 focus-visible:scale-[1.015] focus-visible:border-cyan-400 focus-visible:text-slate-800 focus-visible:shadow-[0_24px_58px_rgba(6,182,212,0.34),0_0_56px_rgba(45,212,191,0.36)]"
+      : "border-slate-300 bg-white text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.045)] hover:-translate-y-1 hover:scale-[1.015] hover:border-slate-400 hover:text-slate-800 hover:shadow-[0_24px_58px_rgba(15,23,42,0.20),0_0_44px_rgba(148,163,184,0.30)] focus:-translate-y-1 focus:scale-[1.015] focus:border-slate-400 focus:text-slate-800 focus:shadow-[0_24px_58px_rgba(15,23,42,0.22),0_0_48px_rgba(148,163,184,0.34)] focus-visible:-translate-y-1 focus-visible:scale-[1.015] focus-visible:border-slate-400 focus-visible:text-slate-800 focus-visible:shadow-[0_24px_58px_rgba(15,23,42,0.24),0_0_52px_rgba(148,163,184,0.38)]";
+
+  const activeToneClass =
+    tone === "teal"
+      ? "border-transparent bg-gradient-to-r from-cyan-500 via-teal-500 to-emerald-500 text-white shadow-[0_22px_52px_rgba(20,184,166,0.34),0_0_42px_rgba(45,212,191,0.26)] hover:-translate-y-1 hover:scale-[1.015] hover:shadow-[0_28px_68px_rgba(20,184,166,0.42),0_0_58px_rgba(45,212,191,0.34)] focus:-translate-y-1 focus:scale-[1.015] focus:shadow-[0_28px_68px_rgba(20,184,166,0.44),0_0_62px_rgba(45,212,191,0.38)] focus-visible:-translate-y-1 focus-visible:scale-[1.015]"
+      : "border-transparent bg-[#162238] text-white shadow-[0_22px_52px_rgba(15,23,42,0.28),0_0_36px_rgba(15,23,42,0.16)] hover:-translate-y-1 hover:scale-[1.015] hover:shadow-[0_28px_68px_rgba(15,23,42,0.38),0_0_48px_rgba(15,23,42,0.22)] focus:-translate-y-1 focus:scale-[1.015] focus:shadow-[0_28px_68px_rgba(15,23,42,0.40),0_0_52px_rgba(15,23,42,0.24)] focus-visible:-translate-y-1 focus-visible:scale-[1.015]";
+
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
       className={[
-        "group inline-flex min-h-[58px] items-center justify-center rounded-full border-2 px-7 py-3 text-base font-bold transition-all duration-300 focus:outline-none",
-        active
-          ? tone === "teal"
-            ? "border-transparent bg-gradient-to-r from-cyan-700 via-teal-600 to-emerald-600 text-white shadow-[0_18px_42px_rgba(15,118,110,0.36)] hover:-translate-y-0.5 hover:shadow-[0_22px_52px_rgba(15,118,110,0.44),0_0_34px_rgba(16,185,129,0.28)] focus-visible:-translate-y-0.5 focus-visible:ring-4 focus-visible:ring-teal-200/70 focus-visible:shadow-[0_22px_52px_rgba(15,118,110,0.44),0_0_34px_rgba(16,185,129,0.28)] active:translate-y-0"
-            : "border-transparent bg-[#0f1b33] text-white shadow-[0_14px_28px_rgba(15,23,42,0.14)] hover:-translate-y-0.5 hover:shadow-[0_22px_52px_rgba(15,23,42,0.24),0_0_30px_rgba(8,145,178,0.16)] focus-visible:-translate-y-0.5 focus-visible:ring-4 focus-visible:ring-slate-300/70 focus-visible:shadow-[0_22px_52px_rgba(15,23,42,0.24),0_0_30px_rgba(8,145,178,0.16)] active:translate-y-0"
-          : "border-slate-200 bg-white text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800 hover:shadow-[0_18px_38px_rgba(8,145,178,0.16),0_0_30px_rgba(16,185,129,0.10)] focus-visible:-translate-y-0.5 focus-visible:border-slate-300 focus-visible:bg-slate-50 focus-visible:text-slate-700 focus-visible:ring-4 focus-visible:ring-cyan-200/55 focus-visible:shadow-[0_22px_52px_rgba(15,118,110,0.28),0_0_42px_rgba(16,185,129,0.18)] active:translate-y-0",
-        disabled ? "cursor-not-allowed opacity-60 hover:translate-y-0 focus-visible:translate-y-0" : ""
+        "inline-flex min-h-[54px] items-center justify-center rounded-[30px] border-[3px] px-8 py-3 text-[16px] font-black leading-none tracking-normal transition-all duration-200 outline-none focus:outline-none focus-visible:ring-0 active:translate-y-0 active:scale-[0.99]",
+        active ? activeToneClass : inactiveToneClass,
+        disabled
+          ? "cursor-not-allowed opacity-60 hover:translate-y-0 hover:scale-100 hover:shadow-[0_8px_20px_rgba(15,23,42,0.045)] focus:translate-y-0 focus:scale-100 focus-visible:translate-y-0 focus-visible:scale-100"
+          : ""
       ].join(" ")}
     >
-      {label}
+      <span className="font-black">{label}</span>
     </button>
+  );
+}
+
+function FeedFilterSectionTitle({ children, tone = "dark" }) {
+  return (
+    <div className="mb-3 flex items-center gap-3">
+      <span
+        aria-hidden="true"
+        className={[
+          "h-7 w-1.5 rounded-full",
+          tone === "teal" ? "bg-teal-500" : "bg-[#162238]"
+        ].join(" ")}
+      />
+      <h2 className="text-[15px] font-extrabold tracking-[0.02em] text-slate-950">
+        {children}
+      </h2>
+    </div>
   );
 }
 
@@ -296,24 +322,26 @@ function FeedIntroPanel({
   const hasFilters = hasActiveFeedFilters(filters);
 
   return (
-    <section className="rounded-[34px] border border-[#d9efec] bg-[#eff8f7] px-6 py-8 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] lg:px-10 lg:py-10">
+    <section className="rounded-[30px] border border-[#d9efec] bg-[#f3fbfa] px-5 py-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] sm:px-7 lg:px-9 lg:py-7">
       <div className="max-w-5xl">
-        <h1 className="text-[46px] font-extrabold tracking-tight text-slate-900 sm:text-[58px] lg:text-[66px]">
+        <h1 className="text-[42px] font-extrabold leading-[0.95] tracking-tight text-slate-950 sm:text-[52px] lg:text-[60px]">
           Discover{" "}
-          <span className="bg-gradient-to-r from-sky-600 via-cyan-600 to-teal-500 bg-clip-text text-transparent">
+          <span className="relative inline-block bg-gradient-to-r from-cyan-500 via-teal-500 to-emerald-500 bg-clip-text pr-1 text-transparent">
             Stories
+            <span
+              aria-hidden="true"
+              className="absolute -bottom-1 left-0 h-1.5 w-full rounded-full bg-gradient-to-r from-cyan-500 via-teal-500 to-emerald-500"
+            />
           </span>
         </h1>
 
-        <p className="mt-5 max-w-3xl text-lg leading-8 text-slate-500">
+        <p className="mt-4 max-w-3xl text-base font-semibold leading-7 text-slate-500 sm:text-[17px]">
           Explore authentic travel experiences from adventurers worldwide
         </p>
 
-        <div className="mt-10 space-y-8">
+        <div className="mt-7 space-y-6">
           <div>
-            <div className="mb-4 text-[13px] font-extrabold uppercase tracking-[0.24em] text-slate-400">
-              Sentiment
-            </div>
+            <FeedFilterSectionTitle tone="dark">Sentiment</FeedFilterSectionTitle>
 
             <div className="flex flex-wrap gap-3">
               {FEED_SENTIMENT_OPTIONS.map((option) => (
@@ -330,11 +358,9 @@ function FeedIntroPanel({
           </div>
 
           <div>
-            <div className="mb-4 text-[13px] font-extrabold uppercase tracking-[0.24em] text-slate-400">
-              Destinations
-            </div>
+            <FeedFilterSectionTitle tone="teal">Destinations</FeedFilterSectionTitle>
 
-            <div className="flex flex-wrap gap-4">
+            <div className="flex flex-wrap gap-3">
               {FEED_CATEGORY_OPTIONS.map((option) => (
                 <FeedFilterPill
                   key={option.key}
@@ -350,7 +376,7 @@ function FeedIntroPanel({
         </div>
 
         {hasFilters ? (
-          <div className="mt-6 flex flex-wrap gap-2">
+          <div className="mt-5 flex flex-wrap gap-2">
             {filters.q ? (
               <span className="inline-flex items-center rounded-full bg-white px-4 py-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
                 Search: {filters.q}
@@ -449,11 +475,10 @@ const FeedImageGallery = React.memo(function FeedImageGallery({ post }) {
   const totalImages = Number.isFinite(Number(post?.imageCount))
     ? Number(post.imageCount)
     : images.length;
-  const remaining = Math.max(0, totalImages - images.length);
 
   if (images.length === 0) {
     return (
-      <div className="mt-6 rounded-[26px] border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-sm text-slate-500">
+      <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">
         {totalImages > 0
           ? `${totalImages} image${totalImages === 1 ? "" : "s"} attached, but no preview is available.`
           : "No preview images for this post."}
@@ -463,80 +488,106 @@ const FeedImageGallery = React.memo(function FeedImageGallery({ post }) {
 
   if (images.length === 1) {
     return (
-      <div className="mt-6 overflow-hidden rounded-[26px] border border-slate-200 bg-slate-50">
-        <SafeFeedImage
-          src={optimizeCloudinaryUrl(images[0], "card")}
-          alt={post.title}
-          className="h-[360px] w-full object-cover"
-        />
+      <div className="mt-5 rounded-[28px] border border-cyan-100/80 bg-[#eaf9f7] px-3 py-3 shadow-[0_14px_30px_rgba(8,145,178,0.10),0_0_24px_rgba(16,185,129,0.08)]">
+        <div className="mx-auto flex max-w-[920px] items-center justify-center">
+          <SafeFeedImage
+            src={optimizeCloudinaryUrl(images[0], "single")}
+            alt={post.title}
+            className="max-h-[390px] w-auto max-w-full rounded-[24px] object-contain shadow-[0_12px_28px_rgba(15,23,42,0.10)]"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (images.length === 2) {
+    const remaining = Math.max(0, totalImages - 2);
+
+    return (
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+        <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50">
+          <SafeFeedImage
+            src={optimizeCloudinaryUrl(images[0], "card")}
+            alt={`${post.title} preview 1`}
+            className="h-[300px] w-full object-cover sm:h-[320px]"
+          />
+        </div>
+
+        <div className="relative overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50">
+          <SafeFeedImage
+            src={optimizeCloudinaryUrl(images[1], "card")}
+            alt={`${post.title} preview 2`}
+            className="h-[300px] w-full object-cover sm:h-[320px]"
+          />
+
+          {remaining > 0 ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-950/45">
+              <span className="rounded-full bg-white/90 px-3 py-1 text-sm font-semibold text-slate-900">
+                +{remaining} more
+              </span>
+            </div>
+          ) : null}
+        </div>
       </div>
     );
   }
 
   const first = images[0];
   const second = images[1];
-  const third = images[2] || null;
+  const third = images[2];
+  const remaining = Math.max(0, totalImages - 3);
 
   return (
-    <div className="mt-6 grid gap-3 lg:grid-cols-[1.18fr_0.82fr]">
-      <div className="overflow-hidden rounded-[26px] border border-slate-200 bg-slate-50">
+    <div className="mt-5 grid gap-3 lg:grid-cols-[1.14fr_0.86fr]">
+      <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50">
         <SafeFeedImage
           src={optimizeCloudinaryUrl(first, "card")}
           alt={`${post.title} preview 1`}
-          className="h-[360px] w-full object-cover"
+          className="h-[300px] w-full object-cover sm:h-[320px]"
         />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-        <div className="overflow-hidden rounded-[26px] border border-slate-200 bg-slate-50">
+        <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50">
           <SafeFeedImage
             src={optimizeCloudinaryUrl(second, "thumb")}
             alt={`${post.title} preview 2`}
-            className="h-[173px] w-full object-cover"
+            className="h-[144px] w-full object-cover sm:h-[154px]"
           />
         </div>
 
-        {third ? (
-          <div className="relative overflow-hidden rounded-[26px] border border-slate-200 bg-slate-50">
-            <SafeFeedImage
-              src={optimizeCloudinaryUrl(third, "thumb")}
-              alt={`${post.title} preview 3`}
-              className="h-[173px] w-full object-cover"
-            />
+        <div className="relative overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50">
+          <SafeFeedImage
+            src={optimizeCloudinaryUrl(third, "thumb")}
+            alt={`${post.title} preview 3`}
+            className="h-[144px] w-full object-cover sm:h-[154px]"
+          />
 
-            {remaining > 0 && (
-              <div className="absolute inset-0 flex items-center justify-center bg-slate-950/45">
-                <span className="rounded-full bg-white/90 px-3 py-1 text-sm font-semibold text-slate-900">
-                  +{remaining} more
-                </span>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="rounded-[26px] border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-            {totalImages} image{totalImages === 1 ? "" : "s"} attached
-          </div>
-        )}
+          {remaining > 0 ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-950/45">
+              <span className="rounded-full bg-white/90 px-3 py-1 text-sm font-semibold text-slate-900">
+                +{remaining} more
+              </span>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );
 });
 
-function FeedUserIcon({ className = "h-7 w-7" }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      className={className}
-      stroke="currentColor"
-      strokeWidth="2.1"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="8" r="3.75" />
-      <path d="M5 20a7 7 0 0 1 14 0" />
-    </svg>
-  );
+function getFeedAuthorInitials(post) {
+  const source = String(post?.username || post?.email || "T").trim();
+
+  if (!source) return "T";
+
+  const parts = source.replace(/[@._-]+/g, " ").split(/\s+/).filter(Boolean);
+
+  if (parts.length >= 2) {
+    return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
+  }
+
+  return source.slice(0, 2).toUpperCase();
 }
 
 function FeedLocationIcon({ className = "h-5 w-5" }) {
@@ -546,12 +597,13 @@ function FeedLocationIcon({ className = "h-5 w-5" }) {
       fill="none"
       className={className}
       stroke="currentColor"
-      strokeWidth="2.35"
+      strokeWidth="2.25"
       strokeLinecap="round"
       strokeLinejoin="round"
+      aria-hidden="true"
     >
-      <path d="M12 21s6.5-4.45 6.5-10.35A6.5 6.5 0 1 0 5.5 10.65C5.5 16.55 12 21 12 21Z" />
-      <circle cx="12" cy="10.5" r="2.15" />
+      <path d="M12 21s6.8-4.6 6.8-10.8a6.8 6.8 0 1 0-13.6 0C5.2 16.4 12 21 12 21Z" />
+      <circle cx="12" cy="10.2" r="2.35" />
     </svg>
   );
 }
@@ -576,8 +628,18 @@ function getFeedPrivacyPillClass(privacy) {
   return "border-slate-200 bg-slate-50 text-slate-700 ring-slate-200";
 }
 
-const FEED_IMAGE_PILL_CLASS =
-  "border-blue-200 bg-blue-50 text-blue-700 ring-blue-200";
+function FeedCompactBadge({ children, className = "" }) {
+  return (
+    <span
+      className={[
+        "inline-flex min-h-[34px] items-center gap-2 rounded-full border px-4 py-1.5 text-[11px] font-black uppercase tracking-[0.08em] shadow-[0_8px_18px_rgba(15,23,42,0.04)] ring-1",
+        className
+      ].join(" ")}
+    >
+      {children}
+    </span>
+  );
+}
 
 function shouldSkipCardNavigation(event) {
   const target = event?.target;
@@ -606,6 +668,7 @@ const FeedPostCard = React.memo(function FeedPostCard({
   const placeCategoryUi = getPlaceCategoryUi(post.placeCategory);
   const username = String(post?.username || "Traveler").trim() || "Traveler";
   const profileUrl = post?.username ? `/users/${encodeURIComponent(post.username)}` : null;
+  const authorInitials = getFeedAuthorInitials(post);
 
   const aiStatus = aiState?.status || "idle";
   const aiContent = aiState?.content || "";
@@ -631,9 +694,6 @@ const FeedPostCard = React.memo(function FeedPostCard({
   const locationLabel =
     dedupeParts([post.locationName, post.city, post.country]).join(", ") || "Open on map";
 
-  const imageCount = Number.isFinite(Number(post?.imageCount))
-    ? Number(post.imageCount)
-    : normalizePreviewImages(post).length;
 
   return (
     <article
@@ -652,30 +712,53 @@ const FeedPostCard = React.memo(function FeedPostCard({
           onOpenPost?.(post);
         }
       }}
-      className="group cursor-pointer overflow-hidden rounded-[34px] border border-cyan-100/80 bg-white p-5 shadow-[0_18px_42px_rgba(8,145,178,0.10),0_0_34px_rgba(16,185,129,0.08)] outline-none transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-100 hover:shadow-[0_30px_80px_rgba(8,145,178,0.24),0_0_70px_rgba(16,185,129,0.22)] focus-visible:-translate-y-0.5 focus-visible:border-cyan-200 focus-visible:ring-4 focus-visible:ring-cyan-200/55 focus-visible:shadow-[0_30px_80px_rgba(8,145,178,0.30),0_0_80px_rgba(16,185,129,0.26)] active:translate-y-0 lg:p-6"
+      className="group cursor-pointer overflow-hidden rounded-[30px] border border-cyan-100/80 bg-white p-4 shadow-[0_16px_38px_rgba(8,145,178,0.10),0_0_30px_rgba(16,185,129,0.08)] outline-none transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-100 hover:shadow-[0_24px_64px_rgba(8,145,178,0.20),0_0_48px_rgba(16,185,129,0.16)] focus-visible:-translate-y-0.5 focus-visible:border-cyan-200 focus-visible:ring-4 focus-visible:ring-cyan-200/55 focus-visible:shadow-[0_24px_64px_rgba(8,145,178,0.24),0_0_52px_rgba(16,185,129,0.20)] active:translate-y-0 lg:p-5"
     >
       <div className="flex flex-col">
-        <header className="flex items-center gap-4">
-          <div className="inline-flex h-[58px] w-[58px] shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 shadow-[0_14px_28px_rgba(15,23,42,0.10)] ring-1 ring-slate-100">
-            <FeedUserIcon className="h-7 w-7" />
-          </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <FeedCompactBadge className={getFeedSentimentPillClass(sentimentUi.sentiment)}>
+            <span aria-hidden="true">{sentimentUi.emoji}</span>
+            <span>{String(sentimentUi.label || "").toUpperCase()}</span>
+          </FeedCompactBadge>
 
-          <div className="min-w-0">
-            {profileUrl ? (
-              <Link
-                to={profileUrl}
-                className="block w-fit break-words text-[22px] font-extrabold tracking-tight text-slate-950 transition hover:text-slate-700 focus:outline-none focus-visible:rounded-xl focus-visible:ring-4 focus-visible:ring-cyan-200/55"
-              >
-                {username}
-              </Link>
-            ) : (
-              <div className="break-words text-[22px] font-extrabold tracking-tight text-slate-950">
-                {username}
+          <FeedCompactBadge className={getFeedPrivacyPillClass(post.privacy)}>
+            <span aria-hidden="true">{privacyUi.icon}</span>
+            <span>{privacyUi.label.toUpperCase()}</span>
+          </FeedCompactBadge>
+
+          <FeedCompactBadge className={placeCategoryUi.badge}>
+            <span aria-hidden="true">{placeCategoryUi.icon}</span>
+            <span>{placeCategoryUi.label.toUpperCase()}</span>
+          </FeedCompactBadge>
+        </div>
+
+        <header className="mt-5 rounded-[24px] border border-slate-200/80 bg-white/85 px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
+          <div className="flex items-center gap-4">
+            <div className="flex h-[58px] w-[58px] shrink-0 items-center justify-center rounded-[18px] bg-slate-900 text-base font-extrabold text-white shadow-[0_14px_28px_rgba(8,145,178,0.18),0_0_24px_rgba(16,185,129,0.14)] ring-4 ring-cyan-50">
+              {authorInitials}
+            </div>
+
+            <div className="min-w-0">
+              <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
+                Written by
               </div>
-            )}
 
-            <div className="mt-1 text-sm font-semibold text-slate-500">
-              {relativeCreatedAt}
+              {profileUrl ? (
+                <Link
+                  to={profileUrl}
+                  className="mt-0.5 block w-fit break-words text-[18px] font-extrabold tracking-tight text-slate-950 transition hover:text-slate-700 focus:outline-none focus-visible:rounded-xl focus-visible:ring-4 focus-visible:ring-cyan-200/55"
+                >
+                  {username}
+                </Link>
+              ) : (
+                <div className="mt-0.5 break-words text-[18px] font-extrabold tracking-tight text-slate-950">
+                  {username}
+                </div>
+              )}
+
+              <div className="mt-0.5 text-sm font-semibold text-slate-500">
+                {relativeCreatedAt}
+              </div>
             </div>
           </div>
         </header>
@@ -683,63 +766,24 @@ const FeedPostCard = React.memo(function FeedPostCard({
         <button
           type="button"
           onClick={() => onOpenOnMap(post)}
-          className="mt-6 inline-flex w-fit max-w-full min-h-[44px] items-center gap-3 rounded-[18px] border border-cyan-200/80 bg-cyan-50/90 px-5 py-2.5 text-left text-sm font-extrabold text-teal-700 shadow-[0_10px_24px_rgba(8,145,178,0.12)] ring-1 ring-cyan-100/80 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-300 hover:bg-cyan-50 hover:text-teal-800 hover:shadow-[0_18px_38px_rgba(8,145,178,0.20),0_0_30px_rgba(16,185,129,0.14)] focus:outline-none focus-visible:-translate-y-0.5 focus-visible:border-cyan-300 focus-visible:bg-cyan-50 focus-visible:text-teal-800 focus-visible:ring-4 focus-visible:ring-cyan-200/55 focus-visible:shadow-[0_22px_52px_rgba(15,118,110,0.28),0_0_42px_rgba(16,185,129,0.18)] active:translate-y-0"
+          className="mt-5 inline-flex w-fit max-w-full min-h-[44px] items-center gap-3 rounded-full border border-cyan-200 bg-cyan-50/95 px-5 py-2.5 text-left text-sm font-extrabold text-teal-700 shadow-[0_12px_28px_rgba(8,145,178,0.16)] ring-1 ring-cyan-100 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-300 hover:bg-cyan-50 hover:text-teal-800 hover:shadow-[0_16px_34px_rgba(8,145,178,0.20),0_0_28px_rgba(16,185,129,0.14)] focus:outline-none focus-visible:-translate-y-0.5 focus-visible:border-cyan-300 focus-visible:bg-cyan-50 focus-visible:text-teal-800 focus-visible:ring-4 focus-visible:ring-cyan-200/55 active:translate-y-0"
         >
           <FeedLocationIcon className="h-5 w-5 shrink-0 text-cyan-600" />
           <span className="min-w-0 truncate">{locationLabel}</span>
         </button>
 
-        <p className="mt-7 whitespace-pre-line text-[17px] leading-8 text-slate-800 lg:text-[18px]">
-          {post.contentPreview || "No preview available."}
-        </p>
+        <section className="relative mt-5 overflow-hidden rounded-[26px] border border-cyan-100/80 bg-white/90 px-5 py-5 shadow-[0_14px_30px_rgba(8,145,178,0.10),0_0_24px_rgba(16,185,129,0.06)]">
+          <div className="absolute left-0 top-2 bottom-2 w-1.5 rounded-full bg-gradient-to-b from-cyan-500 to-emerald-500" />
+          <div className="absolute right-4 bottom-2 text-5xl font-black leading-none text-cyan-100/80">
+            ”
+          </div>
+
+          <p className="relative z-10 pr-8 pl-4 whitespace-pre-line text-[16px] font-semibold italic leading-8 text-slate-700 lg:text-[17px]">
+            {post.contentPreview || "No preview available."}
+          </p>
+        </section>
 
         <FeedImageGallery post={post} />
-
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <span
-            className={[
-              "inline-flex min-h-[40px] items-center gap-2 rounded-full border px-4 py-2 text-[13px] font-extrabold uppercase tracking-[0.08em] shadow-[0_10px_22px_rgba(15,23,42,0.06)] ring-1",
-              getFeedSentimentPillClass(sentimentUi.sentiment)
-            ].join(" ")}
-          >
-            <span aria-hidden="true">{sentimentUi.emoji}</span>
-            <span>{String(sentimentUi.label || "").toUpperCase()}</span>
-          </span>
-
-          <span
-            className={[
-              "inline-flex min-h-[40px] items-center gap-2 rounded-full border px-4 py-2 text-[13px] font-extrabold uppercase tracking-[0.08em] shadow-[0_10px_22px_rgba(15,23,42,0.06)] ring-1",
-              getFeedPrivacyPillClass(post.privacy)
-            ].join(" ")}
-          >
-            <span aria-hidden="true">{privacyUi.icon}</span>
-            <span>{privacyUi.label.toUpperCase()}</span>
-          </span>
-
-          <span
-            className={[
-              "inline-flex min-h-[40px] items-center gap-2 rounded-full border border-transparent px-4 py-2 text-[13px] font-extrabold uppercase tracking-[0.08em] shadow-[0_10px_22px_rgba(15,23,42,0.06)] ring-1",
-              placeCategoryUi.badge
-            ].join(" ")}
-          >
-            <span aria-hidden="true">{placeCategoryUi.icon}</span>
-            <span>{placeCategoryUi.label.toUpperCase()}</span>
-          </span>
-
-          {imageCount > 0 ? (
-            <span
-              className={[
-                "inline-flex min-h-[40px] items-center gap-2 rounded-full border px-4 py-2 text-[13px] font-extrabold uppercase tracking-[0.08em] shadow-[0_10px_22px_rgba(15,23,42,0.06)] ring-1",
-                FEED_IMAGE_PILL_CLASS
-              ].join(" ")}
-            >
-              <span aria-hidden="true">🖼️</span>
-              <span>
-                {imageCount} image{imageCount === 1 ? "" : "s"}
-              </span>
-            </span>
-          ) : null}
-        </div>
 
         <div className="mt-7 grid gap-3">
           <button
@@ -1243,8 +1287,8 @@ export default function FeedPage() {
 
   return (
   <div className="min-h-full bg-[#eff7f6]">
-    <div className="w-full px-4 py-5 sm:px-6 lg:px-10 lg:py-8">
-      <div className="mx-auto max-w-[1120px] space-y-6">
+    <div className="w-full px-4 py-4 sm:px-6 lg:px-10 lg:py-6">
+      <div className="mx-auto max-w-[1120px] space-y-5">
         <FeedIntroPanel
           filters={effectiveFilters}
           isBusy={isInitialLoading || isLoadingMore}
