@@ -991,7 +991,7 @@ export default function NavBar() {
           to="/feed"
           className="group flex min-w-0 shrink-0 items-center gap-3 transition focus:outline-none"
         >
-          <span className="inline-flex h-[66px] w-[66px] shrink-0 items-center justify-center rounded-[22px] bg-gradient-to-br from-cyan-500 to-emerald-500 text-white shadow-[0_18px_42px_rgba(8,145,178,0.28),0_0_34px_rgba(16,185,129,0.20)] ring-4 ring-cyan-50 transition-all duration-300 group-hover:-translate-y-0.5 group-hover:shadow-[0_22px_52px_rgba(8,145,178,0.34),0_0_42px_rgba(16,185,129,0.26)] group-focus-visible:-translate-y-0.5 group-focus-visible:shadow-[0_22px_52px_rgba(8,145,178,0.36),0_0_46px_rgba(16,185,129,0.30)] group-active:translate-y-0">
+          <span className="inline-flex h-[66px] w-[66px] shrink-0 items-center justify-center rounded-[22px] bg-gradient-to-r from-teal-500 to-teal-700 text-white shadow-[0_18px_42px_rgba(8,145,178,0.28),0_0_34px_rgba(16,185,129,0.20)] ring-4 ring-cyan-50 transition-all duration-300 group-hover:-translate-y-0.5 group-hover:shadow-[0_22px_52px_rgba(8,145,178,0.34),0_0_42px_rgba(16,185,129,0.26)] group-focus-visible:-translate-y-0.5 group-focus-visible:shadow-[0_22px_52px_rgba(8,145,178,0.36),0_0_46px_rgba(16,185,129,0.30)] group-active:translate-y-0">
             <BrandPinIcon className="h-8 w-8" />
           </span>
 
@@ -1071,7 +1071,7 @@ export default function NavBar() {
 
         <Link
           to="/posts/new"
-          className="group relative inline-flex min-h-[56px] shrink-0 items-center rounded-full bg-gradient-to-r from-cyan-700 via-teal-600 to-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-[0_18px_46px_rgba(8,145,178,0.34),0_0_34px_rgba(16,185,129,0.26)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_60px_rgba(8,145,178,0.48),0_0_46px_rgba(16,185,129,0.40)] focus:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-teal-300/55 focus:shadow-[0_0_0_7px_rgba(45,212,191,0.24),0_26px_68px_rgba(8,145,178,0.52),0_0_52px_rgba(16,185,129,0.45)] active:translate-y-0 sm:px-7 sm:text-base"
+          className="group relative inline-flex min-h-[56px] shrink-0 items-center rounded-full bg-gradient-to-r from-teal-500 to-teal-700 px-5 py-3 text-sm font-bold text-white shadow-[0_18px_46px_rgba(8,145,178,0.34),0_0_34px_rgba(16,185,129,0.26)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_60px_rgba(8,145,178,0.48),0_0_46px_rgba(16,185,129,0.40)] focus:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-teal-300/55 focus:shadow-[0_0_0_7px_rgba(45,212,191,0.24),0_26px_68px_rgba(8,145,178,0.52),0_0_52px_rgba(16,185,129,0.45)] active:translate-y-0 sm:px-7 sm:text-base"
           aria-label="Create a new post"
         >
           <PlusIcon className="h-5 w-5 transition-transform duration-500 group-hover:rotate-180 group-focus-visible:rotate-180 group-active:rotate-180" />

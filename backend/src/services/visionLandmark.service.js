@@ -11,6 +11,75 @@ const CLOUDINARY_UPLOAD_SEGMENT = "/image/upload/";
 const VISION_IMAGE_TRANSFORM = "c_limit,w_1200,f_jpg,q_auto";
 const CANDIDATE_DEDUPE_DISTANCE_METERS = 50;
 
+const VISION_CACHE_TTL_MS = 10 * 60 * 1000;
+const VISION_CACHE_MAX_ENTRIES = 100;
+
+/**
+ * optimizedImageUrl -> { value, expiresAt, createdAt }
+ * In-memory cache only. Good enough for avoiding duplicate Vision calls between
+ * photo suggestion and save-time verification in the same backend process.
+ */
+const visionDetectionCache = new Map();
+
+function cloneVisionResult(value) {
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  return JSON.parse(JSON.stringify(value));
+}
+
+function pruneVisionDetectionCache(now = Date.now()) {
+  for (const [key, entry] of visionDetectionCache.entries()) {
+    if (!entry || entry.expiresAt <= now) {
+      visionDetectionCache.delete(key);
+    }
+  }
+
+  if (visionDetectionCache.size <= VISION_CACHE_MAX_ENTRIES) {
+    return;
+  }
+
+  const entriesByAge = [...visionDetectionCache.entries()].sort((a, b) => {
+    const createdA = Number.isFinite(a[1]?.createdAt) ? a[1].createdAt : 0;
+    const createdB = Number.isFinite(b[1]?.createdAt) ? b[1].createdAt : 0;
+    return createdA - createdB;
+  });
+
+  const overflow = visionDetectionCache.size - VISION_CACHE_MAX_ENTRIES;
+  for (let index = 0; index < overflow; index += 1) {
+    visionDetectionCache.delete(entriesByAge[index][0]);
+  }
+}
+
+function getCachedVisionDetection(cacheKey) {
+  const entry = visionDetectionCache.get(cacheKey);
+  if (!entry) return null;
+
+  const now = Date.now();
+
+  if (entry.expiresAt <= now) {
+    visionDetectionCache.delete(cacheKey);
+    return null;
+  }
+
+  return cloneVisionResult(entry.value);
+}
+
+function setCachedVisionDetection(cacheKey, value) {
+  const now = Date.now();
+
+  pruneVisionDetectionCache(now);
+
+  visionDetectionCache.set(cacheKey, {
+    value: cloneVisionResult(value),
+    createdAt: now,
+    expiresAt: now + VISION_CACHE_TTL_MS
+  });
+
+  pruneVisionDetectionCache(now);
+}
+
 function normalizeOptionalText(value) {
   if (typeof value !== "string") {
     return null;
@@ -263,6 +332,11 @@ export async function detectLandmarkFromImageUrl(imageUrl) {
 
   const optimizedImageUrl = optimizeImageUrlForVision(imageUrl);
 
+  const cached = getCachedVisionDetection(optimizedImageUrl);
+  if (cached) {
+    return cached;
+  }
+
   const payload = {
     requests: [
       {
@@ -308,5 +382,8 @@ export async function detectLandmarkFromImageUrl(imageUrl) {
     });
   }
 
-  return normalizeVisionResponse(response.data, optimizedImageUrl);
+  const normalized = normalizeVisionResponse(response.data, optimizedImageUrl);
+  setCachedVisionDetection(optimizedImageUrl, normalized);
+
+  return cloneVisionResult(normalized);
 }

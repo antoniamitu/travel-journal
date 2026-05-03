@@ -139,7 +139,7 @@ export function mapNominatimSearchItem(item) {
   return buildMappedResult(item);
 }
 
-export function mapNominatimSearchResults(raw) {
+export function mapNominatimSearchResults(raw, { limit = 5 } = {}) {
   if (raw && typeof raw === "object" && !Array.isArray(raw) && raw.error) {
     return [];
   }
@@ -148,7 +148,9 @@ export function mapNominatimSearchResults(raw) {
     return [];
   }
 
-  return raw.map(mapNominatimSearchItem).filter(Boolean).slice(0, 5);
+  const safeLimit = Number.isSafeInteger(limit) && limit > 0 ? limit : 5;
+
+  return raw.map(mapNominatimSearchItem).filter(Boolean).slice(0, safeLimit);
 }
 
 export function mapNominatimReverseResult(raw, reqLat, reqLng) {

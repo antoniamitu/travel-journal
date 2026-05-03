@@ -91,21 +91,7 @@ const optimizeCloudinaryUrl = makeCloudinaryOptimizer(
 );
 
 
-function getPrivacyUi(privacy) {
-  if (privacy === "public") {
-    return {
-      icon: "🌍",
-      label: "Public",
-      badge: "bg-sky-50 text-sky-700 ring-sky-200"
-    };
-  }
 
-  return {
-    icon: "🔒",
-    label: "Private",
-    badge: "bg-slate-100 text-slate-700 ring-slate-200"
-  };
-}
 
 function normalizePreviewImages(post) {
   const previewImages = Array.isArray(post?.previewImages)
@@ -415,13 +401,7 @@ function FeedSkeletonCard() {
         <div className="mt-3 h-5 w-1/3 rounded-xl bg-slate-100" />
         <div className="mt-2 h-5 w-1/4 rounded-xl bg-slate-100" />
 
-        <div className="mt-6 grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="h-[340px] rounded-[24px] bg-slate-100" />
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            <div className="h-[164px] rounded-[24px] bg-slate-100" />
-            <div className="h-[164px] rounded-[24px] bg-slate-100" />
-          </div>
-        </div>
+        <div className="mt-6 h-[300px] rounded-[24px] bg-slate-100 sm:h-[360px] lg:h-[420px]" />
 
         <div className="mt-6 h-5 w-full rounded-xl bg-slate-100" />
         <div className="mt-2 h-5 w-[92%] rounded-xl bg-slate-100" />
@@ -470,108 +450,186 @@ function EmptyFeedState({ filters }) {
   );
 }
 
-const FeedImageGallery = React.memo(function FeedImageGallery({ post }) {
+const FeedImageGallery = React.memo(function FeedImageGallery({
+  post,
+  locationLabel,
+  sentimentUi,
+  onOpenOnMap
+}) {
   const images = normalizePreviewImages(post);
   const totalImages = Number.isFinite(Number(post?.imageCount))
     ? Number(post.imageCount)
     : images.length;
 
-  if (images.length === 0) {
-    return (
-      <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">
-        {totalImages > 0
-          ? `${totalImages} image${totalImages === 1 ? "" : "s"} attached, but no preview is available.`
-          : "No preview images for this post."}
-      </div>
-    );
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [post?.id]);
+
+  useEffect(() => {
+    if (images.length === 0 && activeIndex !== 0) {
+      setActiveIndex(0);
+      return;
+    }
+
+    if (images.length > 0 && activeIndex > images.length - 1) {
+      setActiveIndex(0);
+    }
+  }, [activeIndex, images.length]);
+
+  const safeIndex = images.length > 0 ? Math.min(activeIndex, images.length - 1) : 0;
+  const activeImage = images[safeIndex] || "";
+  const canSlide = images.length > 1;
+  const hiddenImagesCount = Math.max(0, totalImages - images.length);
+
+  const lat = Number(post?.latitude);
+  const lng = Number(post?.longitude);
+  const canOpenOnMap = hasValidCoordinatePair(lat, lng);
+
+  function stopCardNavigation(e) {
+    e.preventDefault();
+    e.stopPropagation();
   }
 
-  if (images.length === 1) {
-    return (
-      <div className="mt-5 rounded-[28px] border border-cyan-100/80 bg-[#eaf9f7] px-3 py-3 shadow-[0_14px_30px_rgba(8,145,178,0.10),0_0_24px_rgba(16,185,129,0.08)]">
-        <div className="mx-auto flex max-w-[920px] items-center justify-center">
-          <SafeFeedImage
-            src={optimizeCloudinaryUrl(images[0], "single")}
-            alt={post.title}
-            className="max-h-[390px] w-auto max-w-full rounded-[24px] object-contain shadow-[0_12px_28px_rgba(15,23,42,0.10)]"
-          />
-        </div>
-      </div>
-    );
+  function goToPrevious(e) {
+    stopCardNavigation(e);
+
+    if (!canSlide) return;
+
+    setActiveIndex((current) => (current <= 0 ? images.length - 1 : current - 1));
   }
 
-  if (images.length === 2) {
-    const remaining = Math.max(0, totalImages - 2);
+  function goToNext(e) {
+    stopCardNavigation(e);
 
-    return (
-      <div className="mt-5 grid gap-3 lg:grid-cols-2">
-        <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50">
-          <SafeFeedImage
-            src={optimizeCloudinaryUrl(images[0], "card")}
-            alt={`${post.title} preview 1`}
-            className="h-[300px] w-full object-cover sm:h-[320px]"
-          />
-        </div>
+    if (!canSlide) return;
 
-        <div className="relative overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50">
-          <SafeFeedImage
-            src={optimizeCloudinaryUrl(images[1], "card")}
-            alt={`${post.title} preview 2`}
-            className="h-[300px] w-full object-cover sm:h-[320px]"
-          />
-
-          {remaining > 0 ? (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-950/45">
-              <span className="rounded-full bg-white/90 px-3 py-1 text-sm font-semibold text-slate-900">
-                +{remaining} more
-              </span>
-            </div>
-          ) : null}
-        </div>
-      </div>
-    );
+    setActiveIndex((current) => (current >= images.length - 1 ? 0 : current + 1));
   }
 
-  const first = images[0];
-  const second = images[1];
-  const third = images[2];
-  const remaining = Math.max(0, totalImages - 3);
+  function goToIndex(e, index) {
+    stopCardNavigation(e);
+    setActiveIndex(index);
+  }
+
+  function handleLocationClick(e) {
+    stopCardNavigation(e);
+
+    if (!canOpenOnMap) return;
+    onOpenOnMap?.(post);
+  }
 
   return (
-    <div className="mt-5 grid gap-3 lg:grid-cols-[1.14fr_0.86fr]">
-      <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50">
-        <SafeFeedImage
-          src={optimizeCloudinaryUrl(first, "card")}
-          alt={`${post.title} preview 1`}
-          className="h-[300px] w-full object-cover sm:h-[320px]"
-        />
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-        <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50">
-          <SafeFeedImage
-            src={optimizeCloudinaryUrl(second, "thumb")}
-            alt={`${post.title} preview 2`}
-            className="h-[144px] w-full object-cover sm:h-[154px]"
-          />
-        </div>
-
-        <div className="relative overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50">
-          <SafeFeedImage
-            src={optimizeCloudinaryUrl(third, "thumb")}
-            alt={`${post.title} preview 3`}
-            className="h-[144px] w-full object-cover sm:h-[154px]"
+    <div className="relative isolate h-[300px] overflow-hidden bg-slate-100 sm:h-[360px] lg:h-[420px]">
+      {activeImage ? (
+        <>
+          <img
+            aria-hidden="true"
+            src={optimizeCloudinaryUrl(activeImage, "card")}
+            alt=""
+            className="absolute inset-0 z-0 h-full w-full scale-105 object-cover opacity-25 blur-xl"
+            loading="lazy"
+            decoding="async"
           />
 
-          {remaining > 0 ? (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-950/45">
-              <span className="rounded-full bg-white/90 px-3 py-1 text-sm font-semibold text-slate-900">
-                +{remaining} more
-              </span>
-            </div>
-          ) : null}
+          <div className="absolute inset-0 z-[1] bg-slate-950/5" />
+
+          <SafeFeedImage
+            src={optimizeCloudinaryUrl(activeImage, "single")}
+            alt={post?.title || "Post preview"}
+            className="relative z-10 h-full w-full object-contain transition duration-500 group-hover:scale-[1.01]"
+          />
+        </>
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-slate-100 px-4 text-center text-sm text-slate-500">
+          {totalImages > 0
+            ? `${totalImages} image${totalImages === 1 ? "" : "s"} attached, but no preview is available.`
+            : "No preview image for this post."}
         </div>
+      )}
+
+      <div className="absolute inset-0 z-[15] bg-gradient-to-t from-slate-950/35 via-transparent to-slate-950/10" />
+
+      {canSlide ? (
+        <>
+          <button
+            type="button"
+            data-no-card-nav="true"
+            aria-label="Previous image"
+            onMouseDown={stopCardNavigation}
+            onClick={goToPrevious}
+            className="absolute left-4 top-1/2 z-20 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-2xl font-black text-slate-900 shadow-lg backdrop-blur transition hover:scale-105 hover:bg-white focus:outline-none focus:ring-4 focus:ring-white/40"
+          >
+            ‹
+          </button>
+
+          <button
+            type="button"
+            data-no-card-nav="true"
+            aria-label="Next image"
+            onMouseDown={stopCardNavigation}
+            onClick={goToNext}
+            className="absolute right-4 top-1/2 z-20 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-2xl font-black text-slate-900 shadow-lg backdrop-blur transition hover:scale-105 hover:bg-white focus:outline-none focus:ring-4 focus:ring-white/40"
+          >
+            ›
+          </button>
+
+          <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2">
+            {images.map((_, index) => (
+              <button
+                key={index}
+                type="button"
+                data-no-card-nav="true"
+                aria-label={`Show image ${index + 1}`}
+                onMouseDown={stopCardNavigation}
+                onClick={(e) => goToIndex(e, index)}
+                className={[
+                  "h-2.5 rounded-full transition-all",
+                  index === safeIndex
+                    ? "w-7 bg-white shadow-sm"
+                    : "w-2.5 bg-white/55 hover:bg-white/80"
+                ].join(" ")}
+              />
+            ))}
+          </div>
+
+          <div className="absolute left-4 top-4 z-20 rounded-full bg-slate-950/55 px-3 py-1.5 text-xs font-bold text-white shadow-lg backdrop-blur">
+            {safeIndex + 1} / {images.length}
+            {hiddenImagesCount > 0 ? ` · +${hiddenImagesCount}` : ""}
+          </div>
+        </>
+      ) : null}
+
+      <div className="absolute right-4 top-4 z-20">
+        <span
+          className={[
+            "inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-xs font-black uppercase tracking-[0.08em] shadow-lg ring-1 backdrop-blur",
+            getFeedSentimentPillClass(sentimentUi.sentiment)
+          ].join(" ")}
+        >
+          <span aria-hidden="true">{sentimentUi.emoji}</span>
+          <span>{String(sentimentUi.label || "").toUpperCase()}</span>
+        </span>
       </div>
+
+      {canOpenOnMap ? (
+        <button
+          type="button"
+          data-no-card-nav="true"
+          onMouseDown={stopCardNavigation}
+          onClick={handleLocationClick}
+          className="absolute bottom-4 left-4 z-20 inline-flex max-w-[calc(100%-2rem)] items-center gap-2 rounded-full bg-white px-4 py-2.5 text-left text-sm font-extrabold text-slate-950 shadow-xl transition hover:-translate-y-0.5 hover:bg-white focus:outline-none focus:ring-4 focus:ring-white/45"
+        >
+          <FeedLocationIcon className="h-5 w-5 shrink-0 text-cyan-600" />
+          <span className="min-w-0 truncate">{locationLabel}</span>
+        </button>
+      ) : (
+        <span className="absolute bottom-4 left-4 z-20 inline-flex max-w-[calc(100%-2rem)] items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-extrabold text-slate-950 shadow-xl">
+          <FeedLocationIcon className="h-5 w-5 shrink-0 text-cyan-600" />
+          <span className="min-w-0 truncate">{locationLabel}</span>
+        </span>
+      )}
     </div>
   );
 });
@@ -620,13 +678,7 @@ function getFeedSentimentPillClass(sentiment) {
   return "border-slate-200 bg-slate-50 text-slate-700 ring-slate-200";
 }
 
-function getFeedPrivacyPillClass(privacy) {
-  if (privacy === "public") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700 ring-emerald-200";
-  }
 
-  return "border-slate-200 bg-slate-50 text-slate-700 ring-slate-200";
-}
 
 function FeedCompactBadge({ children, className = "" }) {
   return (
@@ -664,7 +716,6 @@ const FeedPostCard = React.memo(function FeedPostCard({
   onOpenPost
 }) {
   const sentimentUi = getSentimentUi(post.sentiment, post.sentimentScore, "feed");
-  const privacyUi = getPrivacyUi(post.privacy);
   const placeCategoryUi = getPlaceCategoryUi(post.placeCategory);
   const username = String(post?.username || "Traveler").trim() || "Traveler";
   const profileUrl = post?.username ? `/users/${encodeURIComponent(post.username)}` : null;
@@ -694,14 +745,13 @@ const FeedPostCard = React.memo(function FeedPostCard({
   const locationLabel =
     dedupeParts([post.locationName, post.city, post.country]).join(", ") || "Open on map";
 
-
   return (
     <article
       role="link"
       tabIndex={0}
       aria-label={`Open post: ${post.title}`}
       onClick={(event) => {
-        if (shouldSkipCardNavigation(event)) return;
+        if (event.defaultPrevented || shouldSkipCardNavigation(event)) return;
         onOpenPost?.(post);
       }}
       onKeyDown={(event) => {
@@ -712,78 +762,71 @@ const FeedPostCard = React.memo(function FeedPostCard({
           onOpenPost?.(post);
         }
       }}
-      className="group cursor-pointer overflow-hidden rounded-[30px] border border-cyan-100/80 bg-white p-4 shadow-[0_16px_38px_rgba(8,145,178,0.10),0_0_30px_rgba(16,185,129,0.08)] outline-none transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-100 hover:shadow-[0_24px_64px_rgba(8,145,178,0.20),0_0_48px_rgba(16,185,129,0.16)] focus-visible:-translate-y-0.5 focus-visible:border-cyan-200 focus-visible:ring-4 focus-visible:ring-cyan-200/55 focus-visible:shadow-[0_24px_64px_rgba(8,145,178,0.24),0_0_52px_rgba(16,185,129,0.20)] active:translate-y-0 lg:p-5"
+      className="group cursor-pointer overflow-hidden rounded-[32px] border border-cyan-100/80 bg-white shadow-[0_16px_38px_rgba(8,145,178,0.10),0_0_30px_rgba(16,185,129,0.08)] outline-none transition-all duration-300 hover:-translate-y-1 hover:border-cyan-100 hover:shadow-[0_26px_68px_rgba(8,145,178,0.20),0_0_50px_rgba(16,185,129,0.16)] focus-visible:-translate-y-1 focus-visible:border-cyan-200 focus-visible:ring-4 focus-visible:ring-cyan-200/55 active:translate-y-0"
     >
-      <div className="flex flex-col">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <FeedCompactBadge className={getFeedSentimentPillClass(sentimentUi.sentiment)}>
-            <span aria-hidden="true">{sentimentUi.emoji}</span>
-            <span>{String(sentimentUi.label || "").toUpperCase()}</span>
-          </FeedCompactBadge>
+      <FeedImageGallery
+        post={post}
+        locationLabel={locationLabel}
+        sentimentUi={sentimentUi}
+        onOpenOnMap={onOpenOnMap}
+      />
 
-          <FeedCompactBadge className={getFeedPrivacyPillClass(post.privacy)}>
-            <span aria-hidden="true">{privacyUi.icon}</span>
-            <span>{privacyUi.label.toUpperCase()}</span>
-          </FeedCompactBadge>
+      <div className="p-5 lg:p-6">
+        <header className="flex items-center gap-4">
+          <div className="flex h-[58px] w-[58px] shrink-0 items-center justify-center rounded-[18px] bg-slate-950 text-base font-extrabold text-white shadow-[0_14px_28px_rgba(8,145,178,0.18),0_0_24px_rgba(16,185,129,0.14)] ring-4 ring-cyan-50">
+            {authorInitials}
+          </div>
 
-          <FeedCompactBadge className={placeCategoryUi.badge}>
-            <span aria-hidden="true">{placeCategoryUi.icon}</span>
-            <span>{placeCategoryUi.label.toUpperCase()}</span>
-          </FeedCompactBadge>
-        </div>
-
-        <header className="mt-5 rounded-[24px] border border-slate-200/80 bg-white/85 px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
-          <div className="flex items-center gap-4">
-            <div className="flex h-[58px] w-[58px] shrink-0 items-center justify-center rounded-[18px] bg-slate-900 text-base font-extrabold text-white shadow-[0_14px_28px_rgba(8,145,178,0.18),0_0_24px_rgba(16,185,129,0.14)] ring-4 ring-cyan-50">
-              {authorInitials}
+          <div className="min-w-0">
+            <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
+              Written by
             </div>
 
-            <div className="min-w-0">
-              <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
-                Written by
+            {profileUrl ? (
+              <Link
+                to={profileUrl}
+                className="mt-0.5 block w-fit break-words text-[18px] font-extrabold tracking-tight text-slate-950 transition hover:text-slate-700 focus:outline-none focus-visible:rounded-xl focus-visible:ring-4 focus-visible:ring-cyan-200/55"
+              >
+                {username}
+              </Link>
+            ) : (
+              <div className="mt-0.5 break-words text-[18px] font-extrabold tracking-tight text-slate-950">
+                {username}
               </div>
+            )}
 
-              {profileUrl ? (
-                <Link
-                  to={profileUrl}
-                  className="mt-0.5 block w-fit break-words text-[18px] font-extrabold tracking-tight text-slate-950 transition hover:text-slate-700 focus:outline-none focus-visible:rounded-xl focus-visible:ring-4 focus-visible:ring-cyan-200/55"
-                >
-                  {username}
-                </Link>
-              ) : (
-                <div className="mt-0.5 break-words text-[18px] font-extrabold tracking-tight text-slate-950">
-                  {username}
-                </div>
-              )}
-
-              <div className="mt-0.5 text-sm font-semibold text-slate-500">
-                {relativeCreatedAt}
-              </div>
+            <div className="mt-0.5 text-sm font-semibold text-slate-500">
+              {relativeCreatedAt}
             </div>
           </div>
         </header>
 
-        <button
-          type="button"
-          onClick={() => onOpenOnMap(post)}
-          className="mt-5 inline-flex w-fit max-w-full min-h-[44px] items-center gap-3 rounded-full border border-cyan-200 bg-cyan-50/95 px-5 py-2.5 text-left text-sm font-extrabold text-teal-700 shadow-[0_12px_28px_rgba(8,145,178,0.16)] ring-1 ring-cyan-100 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-300 hover:bg-cyan-50 hover:text-teal-800 hover:shadow-[0_16px_34px_rgba(8,145,178,0.20),0_0_28px_rgba(16,185,129,0.14)] focus:outline-none focus-visible:-translate-y-0.5 focus-visible:border-cyan-300 focus-visible:bg-cyan-50 focus-visible:text-teal-800 focus-visible:ring-4 focus-visible:ring-cyan-200/55 active:translate-y-0"
-        >
-          <FeedLocationIcon className="h-5 w-5 shrink-0 text-cyan-600" />
-          <span className="min-w-0 truncate">{locationLabel}</span>
-        </button>
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          <FeedCompactBadge className={placeCategoryUi.badge}>
+            <span aria-hidden="true">{placeCategoryUi.icon}</span>
+            <span>{placeCategoryUi.label.toUpperCase()}</span>
+          </FeedCompactBadge>
 
-        <section className="relative mt-5 overflow-hidden rounded-[26px] border border-cyan-100/80 bg-white/90 px-5 py-5 shadow-[0_14px_30px_rgba(8,145,178,0.10),0_0_24px_rgba(16,185,129,0.06)]">
-          <div className="absolute left-0 top-2 bottom-2 w-1.5 rounded-full bg-gradient-to-b from-cyan-500 to-emerald-500" />
-          <div className="absolute right-4 bottom-2 text-5xl font-black leading-none text-cyan-100/80">
-            ”
-          </div>
+          {sentimentUi.score != null ? (
+            <FeedCompactBadge className="border-violet-200 bg-violet-50 text-violet-700 ring-violet-200">
+              <span aria-hidden="true">⭐</span>
+              <span>{sentimentUi.score.toFixed(1)} / 10</span>
+            </FeedCompactBadge>
+          ) : null}
 
-          <p className="relative z-10 pr-8 pl-4 whitespace-pre-line text-[16px] font-semibold italic leading-8 text-slate-700 lg:text-[17px]">
-            {post.contentPreview || "No preview available."}
-          </p>
-        </section>
+          <FeedCompactBadge className="border-slate-200 bg-slate-50 text-slate-700 ring-slate-200">
+            <span aria-hidden="true">🗓️</span>
+            <span>{formatDate(post.createdAt).toUpperCase()}</span>
+          </FeedCompactBadge>
+        </div>
 
-        <FeedImageGallery post={post} />
+        <h2 className="mt-5 line-clamp-2 text-2xl font-black tracking-tight text-slate-950 lg:text-3xl">
+          {post?.title || "Untitled post"}
+        </h2>
+
+        <p className="mt-3 line-clamp-3 whitespace-pre-line text-[15px] font-medium leading-7 text-slate-600 lg:text-base">
+          {post.contentPreview || "Open this memory to see the full story."}
+        </p>
 
         <div className="mt-7 grid gap-3">
           <button
@@ -1253,7 +1296,7 @@ export default function FeedPage() {
 
   if (isInitialLoading) {
     mainContent = (
-      <div className="space-y-5">
+      <div className="mx-auto max-w-[880px] space-y-5">
         <FeedSkeletonCard />
         <FeedSkeletonCard />
       </div>
@@ -1264,7 +1307,7 @@ export default function FeedPage() {
     mainContent = <EmptyFeedState filters={effectiveFilters} />;
   } else {
     mainContent = (
-      <div className="space-y-5">
+      <div className="mx-auto max-w-[880px] space-y-5">
         {posts.map((post) => (
           <FeedPostCard
             key={post.id}

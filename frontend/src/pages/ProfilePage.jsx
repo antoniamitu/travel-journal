@@ -127,7 +127,9 @@ export default function ProfilePage() {
   const [profileData, setProfileData] = useState({
     user: null,
     stats: null,
-    recentPosts: []
+    posts: [],
+    recentPosts: [],
+    mapPosts: []
   });
   const [errorMessage, setErrorMessage] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -159,7 +161,9 @@ export default function ProfilePage() {
       setProfileData({
         user: data?.user ?? null,
         stats: data?.stats ?? null,
-        recentPosts: Array.isArray(data?.recentPosts) ? data.recentPosts : []
+        posts: Array.isArray(data?.posts) ? data.posts : [],
+        recentPosts: Array.isArray(data?.recentPosts) ? data.recentPosts : [],
+        mapPosts: Array.isArray(data?.mapPosts) ? data.mapPosts : []
       });
       setStatus("ready");
     } catch (err) {
@@ -293,7 +297,9 @@ export default function ProfilePage() {
       <OwnProfile
         user={profileData.user}
         stats={profileData.stats}
+        posts={profileData.posts}
         recentPosts={profileData.recentPosts}
+        mapPosts={profileData.mapPosts}
         onDeleteRequest={handleDeleteRequest}
         deleteDisabled={isDeleting}
       />

@@ -56,6 +56,22 @@ const EMPTY_DIALOG_STATE = {
 const DEFAULT_PHOTO_MISMATCH_MESSAGE =
   "The photo seems to correspond to a different location than the one selected. Check the location or upload another image.";
 
+const DEFAULT_TEXT_MISMATCH_MESSAGE =
+  "Your title or description seems to describe a different location than the one selected.";
+
+const PHOTO_LOCATION_FIELD_ERROR =
+  "The selected location doesn't seem to match the uploaded photo.";
+
+const TEXT_LOCATION_FIELD_ERROR =
+  "The selected location doesn't seem to match your title or description.";
+
+const EMPTY_PHOTO_SUGGESTION_STATE = {
+  status: "idle", // idle | loading | suggested | autofilled | applied | none | error
+  suggestion: null,
+  reason: "",
+  imageKey: ""
+};
+
 function isFiniteNumber(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -227,6 +243,97 @@ function normalizePhotoMismatchData(data) {
   };
 }
 
+function normalizeTextMismatchData(data) {
+  const consistency =
+    data?.consistency && typeof data.consistency === "object" ? data.consistency : {};
+
+  return {
+    message: DEFAULT_TEXT_MISMATCH_MESSAGE,
+    mentionedLocation: normalizeOptionalText(consistency.mentionedLocation),
+    selectedLocation: normalizeOptionalText(consistency.selectedLocation),
+    confidence: toFiniteNumberOrNull(consistency.confidence),
+    distanceMeters: toFiniteNumberOrNull(consistency.distanceMeters),
+    reason: normalizeOptionalText(consistency.reason)
+  };
+}
+
+function getPrimaryUploadedImage(images) {
+  if (!Array.isArray(images)) return null;
+
+  return (
+    images.find(
+      (item) =>
+        item?.status === "uploaded" &&
+        String(item?.secureUrl || "").trim() &&
+        String(item?.publicId || "").trim()
+    ) || null
+  );
+}
+
+function getPhotoSuggestionImageKey(image) {
+  if (!image?.secureUrl || !image?.publicId) return "";
+  return `${image.publicId}::${image.secureUrl}`;
+}
+
+function normalizePhotoSuggestionData(data) {
+  const raw = data?.suggestion && typeof data.suggestion === "object" ? data.suggestion : null;
+  if (!raw) return null;
+
+  const lat = Number(raw.lat);
+  const lng = Number(raw.lng);
+
+  if (!isValidCoordinatePair(lat, lng)) {
+    return null;
+  }
+
+  const locationName =
+    normalizeOptionalText(raw.locationName) ||
+    normalizeOptionalText(raw.displayName) ||
+    normalizeOptionalText(raw.detectedName);
+
+  if (!locationName) {
+    return null;
+  }
+
+  const mode = raw.mode === "autofill" ? "autofill" : "suggest";
+
+  return {
+    source: normalizeOptionalText(raw.source) || "vision_nominatim",
+    mode,
+
+    detectedName: normalizeOptionalText(raw.detectedName),
+    confidence: toFiniteNumberOrNull(raw.confidence),
+    detectionLat: toFiniteNumberOrNull(raw.detectionLat),
+    detectionLng: toFiniteNumberOrNull(raw.detectionLng),
+    distanceMeters: toFiniteNumberOrNull(raw.distanceMeters),
+
+    lat,
+    lng,
+    locationName,
+    city: normalizeOptionalText(raw.city) || "",
+    country: normalizeOptionalText(raw.country) || "",
+    displayName: normalizeOptionalText(raw.displayName) || locationName,
+    osmClass: normalizeOptionalText(raw.osmClass) || "",
+    osmSubtype: normalizeOptionalText(raw.osmSubtype) || "",
+    addressType: normalizeOptionalText(raw.addressType) || ""
+  };
+}
+
+function getPhotoSuggestionLabel(suggestion) {
+  return suggestion?.locationName || suggestion?.displayName || suggestion?.detectedName || "this place";
+}
+
+function isAutoClearableImagesError(value) {
+  const message = String(value || "");
+
+  return (
+    message === `Maximum ${MAX_IMAGES} images per post. Please remove some images first.` ||
+    message === "Please wait until all image uploads finish." ||
+    message === "Please retry or remove failed images before saving." ||
+    message === "One or more images are missing upload data. Please retry or remove them."
+  );
+}
+
 function formatMismatchConfidence(confidence) {
   if (!Number.isFinite(confidence)) return null;
 
@@ -356,6 +463,7 @@ function EditorLoadingSkeleton() {
 function LocationAutocomplete({
   value,
   disabled = false,
+  searchSuppression = null,
   onValueChange,
   onSelectPlace
 }) {
@@ -412,6 +520,27 @@ function LocationAutocomplete({
       document.removeEventListener("keydown", onKeyDown);
     };
   }, []);
+
+
+  useEffect(() => {
+    const query = String(searchSuppression?.value || "").trim();
+    if (!query) return;
+
+    suppressSearchForQueryRef.current = query;
+    requestIdRef.current += 1;
+
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+
+    setItems([]);
+    setError("");
+    setHasSearched(false);
+    setIsLoading(false);
+    setIsOpen(false);
+    setActiveIndex(-1);
+  }, [searchSuppression?.seq, searchSuppression?.value]);
 
   useEffect(() => {
     const suppressedQuery = suppressSearchForQueryRef.current;
@@ -498,14 +627,14 @@ function LocationAutocomplete({
         setItems([]);
         setActiveIndex(-1);
       } finally {
-        if (!cancelled && requestId === requestIdRef.current) {
-          setIsLoading(false);
-        }
+          if (!cancelled && requestId === requestIdRef.current) {
+            setIsLoading(false);
+          }
 
-        if (abortRef.current === controller) {
-          abortRef.current = null;
+          if (abortRef.current === controller) {
+            abortRef.current = null;
+          }
         }
-      }
     })();
 
     return () => {
@@ -693,14 +822,23 @@ export default function PostEditorPage() {
   const [isUsingGps, setIsUsingGps] = useState(false);
   const [reverseStatus, setReverseStatus] = useState("");
   const [dialogState, setDialogState] = useState(EMPTY_DIALOG_STATE);
+  const [photoSuggestionState, setPhotoSuggestionState] = useState(EMPTY_PHOTO_SUGGESTION_STATE);
+  const [locationSearchSuppression, setLocationSearchSuppression] = useState({
+    value: "",
+    seq: 0
+  });
 
   const initialSnapshotRef = useRef(buildSnapshot(EMPTY_FORM, []));
   const loadAbortRef = useRef(null);
   const reverseAbortRef = useRef(null);
   const reverseReqIdRef = useRef(0);
   const submitAbortRef = useRef(null);
+  const photoSuggestionAbortRef = useRef(null);
   const uploadControllersRef = useRef({});
   const imagesRef = useRef(images);
+
+  const photoSuggestionAttemptedImageKeyRef = useRef("");
+  const manualLocationSelectedRef = useRef(false);
 
   useEffect(() => {
     imagesRef.current = images;
@@ -711,6 +849,7 @@ export default function PostEditorPage() {
       if (loadAbortRef.current) loadAbortRef.current.abort();
       if (reverseAbortRef.current) reverseAbortRef.current.abort();
       if (submitAbortRef.current) submitAbortRef.current.abort();
+      if (photoSuggestionAbortRef.current) photoSuggestionAbortRef.current.abort();
 
       Object.values(uploadControllersRef.current).forEach((controller) => {
         if (controller && typeof controller.abort === "function") {
@@ -736,6 +875,17 @@ export default function PostEditorPage() {
       setFieldErrors({});
       setReverseStatus("");
       setDialogState(EMPTY_DIALOG_STATE);
+      setPhotoSuggestionState(EMPTY_PHOTO_SUGGESTION_STATE);
+      setLocationSearchSuppression({ value: "", seq: 0 });
+
+      photoSuggestionAttemptedImageKeyRef.current = "";
+      manualLocationSelectedRef.current = false;
+
+      if (photoSuggestionAbortRef.current) {
+        photoSuggestionAbortRef.current.abort();
+        photoSuggestionAbortRef.current = null;
+      }
+
       initialSnapshotRef.current = buildSnapshot(EMPTY_FORM, []);
       setPageStatus("ready");
     }
@@ -758,8 +908,18 @@ export default function PostEditorPage() {
     );
   }, [form.latitude, form.longitude, form.locationName]);
 
-  const createModeLocked = !isEdit && !hasResolvedLocation;
-  const nonLocationControlsDisabled = isSubmitting || createModeLocked;
+  const hasUploadedImages = useMemo(
+    () => images.some((item) => item.status === "uploaded"),
+    [images]
+  );
+
+  const primaryUploadedImage = useMemo(() => getPrimaryUploadedImage(images), [images]);
+  const primaryUploadedImageKey = useMemo(
+    () => getPhotoSuggestionImageKey(primaryUploadedImage),
+    [primaryUploadedImage]
+  );
+
+const nonLocationControlsDisabled = isSubmitting;
 
   const previewSentiment = isEdit ? savedSentiment : "neutral";
   const sentimentMarkerIcon = useMemo(
@@ -816,6 +976,19 @@ export default function PostEditorPage() {
     return next;
   }, [form, images.length, hasUploadingImages, hasErroredImages, hasResolvedLocation]);
 
+ useEffect(() => {
+    if (!localValidationErrors.images && isAutoClearableImagesError(fieldErrors.images)) {
+      setFieldErrors((prev) => {
+        if (!isAutoClearableImagesError(prev.images)) return prev;
+
+        return {
+          ...prev,
+          images: ""
+        };
+      });
+    }
+  }, [localValidationErrors.images, fieldErrors.images]);
+
   const canSubmit = useMemo(() => {
     return !isSubmitting && Object.keys(localValidationErrors).length === 0;
   }, [isSubmitting, localValidationErrors]);
@@ -864,12 +1037,174 @@ export default function PostEditorPage() {
       addressType: String(place.addressType || "").trim()
     }));
 
+    setLocationSearchSuppression((prev) => ({
+      value: locationName,
+      seq: prev.seq + 1
+    }));
+
     setLocationQuery(locationName);
     setFieldErrors((prev) => ({
       ...prev,
       locationName: ""
     }));
   }, []);
+
+  const markPhotoSuggestionAsNotApplied = useCallback(() => {
+    if (photoSuggestionAbortRef.current) {
+      photoSuggestionAbortRef.current.abort();
+      photoSuggestionAbortRef.current = null;
+    }
+
+    setPhotoSuggestionState((prev) => {
+      if (prev.status === "loading") {
+        return EMPTY_PHOTO_SUGGESTION_STATE;
+      }
+
+      if (
+        prev.suggestion &&
+        (prev.status === "autofilled" || prev.status === "applied")
+      ) {
+        return {
+          ...prev,
+          status: "suggested"
+        };
+      }
+
+      return prev;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (isEdit || isSubmitting) return;
+
+    if (!primaryUploadedImage || !primaryUploadedImageKey) {
+    photoSuggestionAttemptedImageKeyRef.current = "";
+
+    if (photoSuggestionAbortRef.current) {
+      photoSuggestionAbortRef.current.abort();
+      photoSuggestionAbortRef.current = null;
+    }
+
+    setPhotoSuggestionState((prev) =>
+      prev.status === "idle" ? prev : EMPTY_PHOTO_SUGGESTION_STATE
+    );
+
+    return;
+  }
+
+  if (photoSuggestionAttemptedImageKeyRef.current === primaryUploadedImageKey) return;
+  if (hasResolvedLocation || locationQuery.trim()) return;
+
+  photoSuggestionAttemptedImageKeyRef.current = primaryUploadedImageKey;
+  if (photoSuggestionAbortRef.current) {
+    photoSuggestionAbortRef.current.abort();
+  }
+
+  const controller = new AbortController();
+  photoSuggestionAbortRef.current = controller;
+
+  let cancelled = false;
+
+  setPhotoSuggestionState({
+    status: "loading",
+    suggestion: null,
+    reason: "",
+    imageKey: primaryUploadedImageKey
+  });
+
+  (async () => {
+    try {
+      const res = await api.post(
+        "/geocode/photo-suggestion",
+        {
+          imageUrl: primaryUploadedImage.secureUrl,
+          publicId: primaryUploadedImage.publicId
+        },
+        {
+          timeout: 30000,
+          signal: controller.signal
+        }
+      );
+
+      if (cancelled) return;
+
+      const suggestion = normalizePhotoSuggestionData(res?.data);
+
+      if (!suggestion) {
+        setPhotoSuggestionState({
+          status: "none",
+          suggestion: null,
+          reason: res?.data?.reason || "no_suggestion",
+          imageKey: primaryUploadedImageKey
+        });
+        return;
+      }
+
+      const shouldAutofill =
+        suggestion.mode === "autofill" &&
+        !manualLocationSelectedRef.current &&
+        !hasResolvedLocation &&
+        !locationQuery.trim();
+
+      if (shouldAutofill) {
+        applyPlaceToForm(suggestion);
+
+        setPhotoSuggestionState({
+          status: "autofilled",
+          suggestion,
+          reason: "",
+          imageKey: primaryUploadedImageKey
+        });
+
+        toast.success(`Location suggested from your photo: ${getPhotoSuggestionLabel(suggestion)}`);
+        return;
+      }
+
+      setPhotoSuggestionState({
+        status: "suggested",
+        suggestion,
+        reason: "",
+        imageKey: primaryUploadedImageKey
+      });
+    } catch (err) {
+      if (
+        err?.name === "CanceledError" ||
+        err?.code === "ERR_CANCELED" ||
+        err?.name === "AbortError"
+      ) {
+        return;
+      }
+
+      setPhotoSuggestionState({
+        status: "error",
+        suggestion: null,
+        reason: err?.response?.data?.message || "photo_suggestion_failed",
+        imageKey: primaryUploadedImageKey
+      });
+    } finally {
+      if (photoSuggestionAbortRef.current === controller) {
+        photoSuggestionAbortRef.current = null;
+      }
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+    controller.abort();
+
+    if (photoSuggestionAbortRef.current === controller) {
+      photoSuggestionAbortRef.current = null;
+    }
+  };
+}, [
+  applyPlaceToForm,
+  hasResolvedLocation,
+  isEdit,
+  isSubmitting,
+  locationQuery,
+  primaryUploadedImage,
+  primaryUploadedImageKey
+]);
 
   const clearResolvedLocation = useCallback(() => {
     setForm((prev) => ({
@@ -928,8 +1263,11 @@ export default function PostEditorPage() {
 
   const resolveLocationFromCoords = useCallback(
     async (lat, lng, { fallbackLabel = "Dropped pin" } = {}) => {
-    const numericLat = Number(lat);
-    const numericLng = Number(lng);
+      manualLocationSelectedRef.current = true;
+      markPhotoSuggestionAsNotApplied();
+
+      const numericLat = Number(lat);
+      const numericLng = Number(lng);
 
     if (
       !Number.isFinite(numericLat) ||
@@ -1017,12 +1355,12 @@ export default function PostEditorPage() {
           toast.error("Reverse geocoding failed. Using dropped pin.");
         }
       } finally {
-        if (reqId === reverseReqIdRef.current) {
-          reverseAbortRef.current = null;
+          if (reqId === reverseReqIdRef.current) {
+            reverseAbortRef.current = null;
+          }
         }
-      }
     },
-    [applyPlaceToForm, reverseGeocode]
+    [applyPlaceToForm, markPhotoSuggestionAsNotApplied, reverseGeocode]
   );
 
   const uploadOneImage = useCallback(
@@ -1072,9 +1410,9 @@ export default function PostEditorPage() {
           error: message
         }));
       } finally {
-        delete uploadControllersRef.current[localId];
-      }
-    },
+          delete uploadControllersRef.current[localId];
+        }
+      },
     [setImageByLocalId]
   );
 
@@ -1113,9 +1451,21 @@ export default function PostEditorPage() {
         setForm(nextForm);
         setImages(nextImages);
         setSavedSentiment(post?.sentiment || "neutral");
-        setLocationQuery(nextForm.locationName || "");
+        const loadedLocationQuery = nextForm.locationName || "";
+
+        setLocationSearchSuppression((prev) => ({
+          value: loadedLocationQuery,
+          seq: prev.seq + 1
+        }));
+
+        setLocationQuery(loadedLocationQuery);
         setFieldErrors({});
         setReverseStatus("");
+        setPhotoSuggestionState(EMPTY_PHOTO_SUGGESTION_STATE);
+
+        photoSuggestionAttemptedImageKeyRef.current = "__edit_mode__";
+        manualLocationSelectedRef.current = true;
+
         initialSnapshotRef.current = buildSnapshot(nextForm, nextImages);
         setPageStatus("ready");
       } catch (err) {
@@ -1182,14 +1532,30 @@ export default function PostEditorPage() {
     }
 
     const publicIdToCleanup =
-      target.source === "new" && target.publicId && target.status === "uploaded"
-        ? [target.publicId]
-        : [];
+  target.source === "new" && target.publicId && target.status === "uploaded"
+    ? [target.publicId]
+    : [];
 
-    removeImageImmediately(localId);
-    await bestEffortCleanupPublicIds(publicIdToCleanup);
+  const removedImageKey = getPhotoSuggestionImageKey(target);
 
-    setDialogState(EMPTY_DIALOG_STATE);
+  setPhotoSuggestionState((prev) => {
+    if (removedImageKey && prev.imageKey === removedImageKey) {
+      photoSuggestionAttemptedImageKeyRef.current = "";
+      if (photoSuggestionAbortRef.current) {
+        photoSuggestionAbortRef.current.abort();
+        photoSuggestionAbortRef.current = null;
+      }
+
+      return EMPTY_PHOTO_SUGGESTION_STATE;
+    }
+
+    return prev;
+  });
+
+  removeImageImmediately(localId);
+  await bestEffortCleanupPublicIds(publicIdToCleanup);
+
+  setDialogState(EMPTY_DIALOG_STATE);
   }, [bestEffortCleanupPublicIds, dialogState.imageLocalId, removeImageImmediately]);
 
   const handleRetryImage = useCallback(
@@ -1321,12 +1687,12 @@ export default function PostEditorPage() {
         toast.error("Failed to get your current location.");
       }
     } finally {
-      setIsUsingGps(false);
-    }
+        setIsUsingGps(false);
+      }
   }, [resolveLocationFromCoords]);
 
   const handleDiscard = useCallback(async () => {
-    setDialogState((prev) => ({ ...prev, busy: true, mismatchData: null  }));
+    setDialogState((prev) => ({ ...prev, busy: true, mismatchData: null }));
 
     Object.values(uploadControllersRef.current).forEach((controller) => {
       if (controller && typeof controller.abort === "function") {
@@ -1471,8 +1837,7 @@ export default function PostEditorPage() {
             ...prev,
             ...backendErrors,
             locationName:
-              backendErrors?.locationName ||
-              "The selected location doesn't seem to match the uploaded photo."
+              backendErrors?.locationName || PHOTO_LOCATION_FIELD_ERROR
           }));
 
           setDialogState({
@@ -1485,9 +1850,31 @@ export default function PostEditorPage() {
           return;
         }
 
+        const isTextLocationMismatch = status === 422 && data?.code === "TEXT_LOCATION_MISMATCH";
+
+        if (isTextLocationMismatch) {
+          const mismatchData = normalizeTextMismatchData(data);
+
+          setFieldErrors((prev) => ({
+            ...prev,
+            ...backendErrors,
+            locationName:
+              backendErrors?.locationName || TEXT_LOCATION_FIELD_ERROR
+          }));
+
+          setDialogState({
+            type: "text-location-mismatch",
+            imageLocalId: null,
+            busy: false,
+            mismatchData
+          });
+
+          return;
+        }
+
         if (status === 401) {
           toast.error("Session expired. Please login again.");
-       } else if (status === 404) {
+        } else if (status === 404) {
           toast.error(isEdit ? "This post doesn't exist or has been deleted." : "Route not found.");
 
           if (isEdit) {
@@ -1506,7 +1893,7 @@ export default function PostEditorPage() {
       } finally {
           if (!didNavigate) {
             setIsSubmitting(false);
-        }
+          }
 
         if (submitAbortRef.current === controller) {
           submitAbortRef.current = null;
@@ -1561,11 +1948,145 @@ export default function PostEditorPage() {
                 {isEdit ? "Edit Memory" : "Create New Memory"}
               </h1>
               <p className="mt-2 text-sm text-slate-500">
-                Search in the location box, use GPS, or drag the pin on the map to refine the location.
+                Add a photo if you have one, write your memory, then choose the location that best matches it.
               </p>
             </div>
 
             <div className="mt-6 space-y-6">
+              <div>
+                <PostImagePicker
+                  items={images}
+                  maxCount={MAX_IMAGES}
+                  onFilesSelected={handleFilesSelected}
+                  onRequestRemove={requestImageRemoval}
+                  onRetry={handleRetryImage}
+                  errorText={fieldErrors.images}
+                  disabled={nonLocationControlsDisabled}
+                  disabledReason=""
+                />
+
+                {photoSuggestionState.status === "loading" ? (
+  <div className="mt-3 rounded-2xl border border-sky-100 bg-sky-50/80 px-4 py-3 text-sm text-sky-800">
+    Looking for a location suggestion from your photo…
+  </div>
+  ) : null}
+
+  {photoSuggestionState.status === "suggested" && photoSuggestionState.suggestion ? (
+    <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-900">
+      <div className="font-semibold text-amber-950">Suggested location from your photo</div>
+
+      <div className="mt-1">
+        {getPhotoSuggestionLabel(photoSuggestionState.suggestion)}
+        {Number.isFinite(photoSuggestionState.suggestion.confidence)
+          ? ` • ${formatMismatchConfidence(photoSuggestionState.suggestion.confidence)} confidence`
+          : ""}
+      </div>
+
+      {Number.isFinite(photoSuggestionState.suggestion.distanceMeters) ? (
+        <div className="mt-1 text-xs text-amber-800">
+          Matched within {formatMismatchDistance(photoSuggestionState.suggestion.distanceMeters)}.
+        </div>
+      ) : null}
+
+      <button
+        type="button"
+        disabled={isSubmitting}
+        onClick={() => {
+          applyPlaceToForm(photoSuggestionState.suggestion);
+          setPhotoSuggestionState((prev) => ({
+            ...prev,
+            status: "applied"
+          }));
+        }}
+        className="mt-3 inline-flex items-center justify-center rounded-xl bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          Use this location
+        </button>
+      </div>
+    ) : null}
+
+    {["autofilled", "applied"].includes(photoSuggestionState.status) &&
+    photoSuggestionState.suggestion ? (
+      <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-800">
+        <span className="font-semibold">Location suggested from your photo:</span>{" "}
+        {getPhotoSuggestionLabel(photoSuggestionState.suggestion)}. Please review it before saving.
+      </div>
+    ) : null}
+
+    {hasUploadedImages &&
+    !["loading", "suggested", "autofilled", "applied"].includes(photoSuggestionState.status) ? (
+      <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-800">
+        Choose the location that matches your photo. Verification runs when you save the post.
+      </div>
+    ) : null}
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label className="text-sm font-semibold text-slate-900">Post title</label>
+                  <span className="text-xs text-slate-400">{form.title.length}/100</span>
+                </div>
+
+                <input
+                  type="text"
+                  disabled={nonLocationControlsDisabled}
+                  value={form.title}
+                  onChange={(e) => {
+                    const value = e.target.value.slice(0, 100);
+                    setForm((prev) => ({ ...prev, title: value }));
+                    setFieldErrors((prev) => ({
+                      ...prev,
+                      title: "",
+                      locationName: prev.locationName === TEXT_LOCATION_FIELD_ERROR ? "" : prev.locationName
+                    }));
+                  }}
+                  placeholder="Ancient Wonders of Rome"
+                  className={[
+                    "w-full rounded-2xl border bg-slate-50 px-4 py-3 text-base text-slate-900 sm:text-sm outline-none transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400",
+                    titleMessage.tone === "error"
+                      ? "border-rose-300 ring-2 ring-rose-100"
+                      : "border-slate-200 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  ].join(" ")}
+                />
+
+                <p className={`mt-2 text-sm ${messageToneClass(titleMessage.tone)}`}>
+                  {titleMessage.text}
+                </p>
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label className="text-sm font-semibold text-slate-900">Your memory</label>
+                  <span className="text-xs text-slate-400">{form.content.length}/2000</span>
+                </div>
+
+                <textarea
+                  rows={8}
+                  disabled={nonLocationControlsDisabled}
+                  value={form.content}
+                  onChange={(e) => {
+                    const value = e.target.value.slice(0, 2000);
+                    setForm((prev) => ({ ...prev, content: value }));
+                    setFieldErrors((prev) => ({
+                      ...prev,
+                      content: "",
+                      locationName: prev.locationName === TEXT_LOCATION_FIELD_ERROR ? "" : prev.locationName
+                    }));
+                  }}
+                  placeholder="Write your memory here..."
+                  className={[
+                    "w-full resize-none rounded-2xl border bg-slate-50 px-4 py-3 text-base leading-6 text-slate-900 sm:text-sm outline-none transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400",
+                    contentMessage.tone === "error"
+                      ? "border-rose-300 ring-2 ring-rose-100"
+                      : "border-slate-200 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  ].join(" ")}
+                />
+
+                <p className={`mt-2 text-sm ${messageToneClass(contentMessage.tone)}`}>
+                  {contentMessage.text}
+                </p>
+              </div>
+
               <div>
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <label className="text-sm font-semibold text-slate-900">Location</label>
@@ -1597,14 +2118,22 @@ export default function PostEditorPage() {
                 <LocationAutocomplete
                   value={locationQuery}
                   disabled={isSubmitting}
+                  searchSuppression={locationSearchSuppression}
                   onValueChange={(nextValue) => {
+                    if (nextValue.trim()) {
+                      manualLocationSelectedRef.current = true;
+                    }
+
                     setLocationQuery(nextValue);
                     clearResolvedLocation();
+                    markPhotoSuggestionAsNotApplied();
+
                     if (!nextValue.trim()) {
                       setReverseStatus("");
                     }
                   }}
                   onSelectPlace={(place) => {
+                    manualLocationSelectedRef.current = true;
                     applyPlaceToForm(place);
                     setReverseStatus("");
                   }}
@@ -1636,18 +2165,18 @@ export default function PostEditorPage() {
                   "rounded-2xl border px-4 py-4",
                   hasResolvedLocation
                     ? "border-emerald-200 bg-emerald-50"
-                    : "border-emerald-200 bg-emerald-50/40 ring-1 ring-emerald-100"
+                    : "border-slate-200 bg-slate-50"
                 ].join(" ")}
               >
                 {!hasResolvedLocation ? (
                   <div className="flex items-start gap-3">
-                    <div className="mt-0.5 text-emerald-600">📍</div>
+                    <div className="mt-0.5 text-slate-500">📍</div>
                     <div>
-                      <div className="text-sm font-semibold text-emerald-800">
-                        Please select a location to continue
+                      <div className="text-sm font-semibold text-slate-800">
+                        Choose the matching location before saving
                       </div>
-                      <div className="mt-1 text-sm text-emerald-700">
-                        Use the location field above, click the map, or use GPS. The rest of the form unlocks only after a location is chosen.
+                      <div className="mt-1 text-sm text-slate-600">
+                        Search for a place, use GPS, or tap the map. If a photo is uploaded, the app will compare it with the selected location when you save.
                       </div>
                     </div>
                   </div>
@@ -1679,111 +2208,36 @@ export default function PostEditorPage() {
                 )}
               </div>
 
-              <div className={createModeLocked ? "pointer-events-none select-none" : ""}>
-                <div className={createModeLocked ? "opacity-60" : ""}>
-                  <div>
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <label className="text-sm font-semibold text-slate-900">Post title</label>
-                      <span className="text-xs text-slate-400">{form.title.length}/100</span>
-                    </div>
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-900">Privacy</label>
 
-                    <input
-                      type="text"
-                      disabled={nonLocationControlsDisabled}
-                      value={form.title}
-                      onChange={(e) => {
-                        const value = e.target.value.slice(0, 100);
-                        setForm((prev) => ({ ...prev, title: value }));
-                        setFieldErrors((prev) => ({ ...prev, title: "" }));
-                      }}
-                      placeholder="Ancient Wonders of Rome"
-                      className={[
-                        "w-full rounded-2xl border bg-slate-50 px-4 py-3 text-base text-slate-900 sm:text-sm outline-none transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400",
-                        titleMessage.tone === "error"
-                          ? "border-rose-300 ring-2 ring-rose-100"
-                          : "border-slate-200 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                      ].join(" ")}
-                    />
+                <div className="relative">
+                  <select
+                    disabled={nonLocationControlsDisabled}
+                    value={form.privacy}
+                    onChange={(e) => {
+                      setForm((prev) => ({ ...prev, privacy: e.target.value }));
+                    }}
+                    className="w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-11 text-base font-medium text-slate-900 sm:text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    <option value="private">🔒 Private (only me)</option>
+                    <option value="public">🌍 Public (all users)</option>
+                  </select>
 
-                    <p className={`mt-2 text-sm ${messageToneClass(titleMessage.tone)}`}>
-                      {titleMessage.text}
-                    </p>
-                  </div>
-
-                  <div className="mt-6">
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <label className="text-sm font-semibold text-slate-900">Your memory</label>
-                      <span className="text-xs text-slate-400">{form.content.length}/2000</span>
-                    </div>
-
-                    <textarea
-                      rows={8}
-                      disabled={nonLocationControlsDisabled}
-                      value={form.content}
-                      onChange={(e) => {
-                        const value = e.target.value.slice(0, 2000);
-                        setForm((prev) => ({ ...prev, content: value }));
-                        setFieldErrors((prev) => ({ ...prev, content: "" }));
-                      }}
-                      placeholder="Write your memory here..."
-                      className={[
-                        "w-full resize-none rounded-2xl border bg-slate-50 px-4 py-3 text-base leading-6 text-slate-900 sm:text-sm outline-none transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400",
-                        contentMessage.tone === "error"
-                          ? "border-rose-300 ring-2 ring-rose-100"
-                          : "border-slate-200 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                      ].join(" ")}
-                    />
-
-                    <p className={`mt-2 text-sm ${messageToneClass(contentMessage.tone)}`}>
-                      {contentMessage.text}
-                    </p>
-                  </div>
-
-                  <div className="mt-6">
-                    <PostImagePicker
-                      items={images}
-                      maxCount={MAX_IMAGES}
-                      onFilesSelected={handleFilesSelected}
-                      onRequestRemove={requestImageRemoval}
-                      onRetry={handleRetryImage}
-                      errorText={fieldErrors.images}
-                      disabled={nonLocationControlsDisabled}
-                      disabledReason={
-                        createModeLocked ? "Select a location first to enable photo upload." : ""
-                      }
-                    />
-                  </div>
-
-                  <div className="mt-6">
-                    <label className="mb-2 block text-sm font-semibold text-slate-900">Privacy</label>
-
-                    <div className="relative">
-                      <select
-                        disabled={nonLocationControlsDisabled}
-                        value={form.privacy}
-                        onChange={(e) => {
-                          setForm((prev) => ({ ...prev, privacy: e.target.value }));
-                        }}
-                        className="w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-11 text-base font-medium text-slate-900 sm:text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                      >
-                        <option value="private">🔒 Private (only me)</option>
-                        <option value="public">🌍 Public (all users)</option>
-                      </select>
-
-                      <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">
-                        ⌄
-                      </span>
-                    </div>
-
-                    <p className="mt-2 text-xs text-slate-500">
-                      Private posts are visible only to you. Public posts can be seen by other authenticated users.
-                    </p>
-                  </div>
-                  <p className="mt-6 text-sm text-slate-500">
-                    Sentiment is calculated automatically.
-                  </p>
+                  <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">
+                    ⌄
+                  </span>
                 </div>
+
+                <p className="mt-2 text-xs text-slate-500">
+                  Private posts are visible only to you. Public posts can be seen by other authenticated users.
+                </p>
               </div>
+
+              <p className="text-sm text-slate-500">
+                Sentiment is calculated automatically.
+              </p>
+
               <div className="hidden gap-3 pt-2 md:flex md:flex-row md:items-center md:justify-between">
                 <button
                   type="button"
@@ -2008,6 +2462,75 @@ export default function PostEditorPage() {
         confirmLabel="OK, I'll fix it"
         showCancelButton={false}
         icon="📷"
+        onClose={() => setDialogState(EMPTY_DIALOG_STATE)}
+        onConfirm={() => setDialogState(EMPTY_DIALOG_STATE)}
+      />
+      <ActionDialog
+        open={dialogState.type === "text-location-mismatch"}
+        tone="danger"
+        busy={false}
+        title="Text and location don't seem to match"
+        message={
+          <div>
+            <p>{dialogState.mismatchData?.message || DEFAULT_TEXT_MISMATCH_MESSAGE}</p>
+
+            {(dialogState.mismatchData?.mentionedLocation ||
+              dialogState.mismatchData?.selectedLocation ||
+              Number.isFinite(dialogState.mismatchData?.confidence) ||
+              Number.isFinite(dialogState.mismatchData?.distanceMeters)) && (
+              <div className="mt-4 rounded-2xl border border-rose-100 bg-rose-50/70 p-4">
+                <div className="text-sm font-semibold text-slate-900">
+                  What the text check found
+                </div>
+
+                <div className="mt-3 space-y-2 text-sm text-slate-700">
+                  {dialogState.mismatchData?.mentionedLocation ? (
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-500">Text appears to describe</span>
+                      <span className="text-right font-medium text-slate-900">
+                        {dialogState.mismatchData.mentionedLocation}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {dialogState.mismatchData?.selectedLocation ? (
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-500">Selected location</span>
+                      <span className="text-right font-medium text-slate-900">
+                        {dialogState.mismatchData.selectedLocation}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {Number.isFinite(dialogState.mismatchData?.confidence) ? (
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-500">Extraction confidence</span>
+                      <span className="text-right font-medium text-slate-900">
+                        {formatMismatchConfidence(dialogState.mismatchData.confidence)}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {Number.isFinite(dialogState.mismatchData?.distanceMeters) ? (
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-500">Distance between locations</span>
+                      <span className="text-right font-medium text-slate-900">
+                        {formatMismatchDistance(dialogState.mismatchData.distanceMeters)}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            <p className="mt-4 text-slate-600">
+              Please correct the selected location or update the title/description, then try saving again.
+            </p>
+          </div>
+        }
+        confirmLabel="OK, I'll fix it"
+        showCancelButton={false}
+        icon="📝"
         onClose={() => setDialogState(EMPTY_DIALOG_STATE)}
         onConfirm={() => setDialogState(EMPTY_DIALOG_STATE)}
       />

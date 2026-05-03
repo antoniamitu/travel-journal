@@ -2,7 +2,11 @@
 import { getPrisma } from "../config/prisma.js";
 import { ENV } from "../config/env.js";
 import { CACHE_TYPES } from "../constants/cacheTypes.js";
-import { geocodeSearchSchema, geocodeReverseSchema } from "../validators/query.validator.js";
+import {
+  geocodeSearchSchema,
+  geocodeReverseSchema,
+  geocodePhotoSuggestionSchema
+} from "../validators/query.validator.js";
 import { formatZodErrors } from "../utils/formatZodErrors.js";
 import { normalizeQuery } from "../utils/normalizeQuery.js";
 import { mapNominatimSearchResults, mapNominatimReverseResult } from "../utils/mapNominatim.js";
@@ -13,6 +17,8 @@ import {
   reverseGeocode,
   searchPlacesForEnrichment
 } from "../services/nominatim.service.js";
+import { suggestLocationFromPhoto } from "../services/photoLocationSuggestion.service.js";
+import { getUploadFolderForUser } from "../services/cloudinary.service.js";
 import { checkGeocodeLimit } from "../utils/geocodeRateLimit.js";
 import { HttpError } from "../utils/httpError.js";
 import { calculateHaversineDistanceMeters } from "../utils/geoDistance.js";
@@ -57,6 +63,33 @@ const GENERIC_REVERSE_NATURAL_SUBTYPES = new Set([
   "tundra",
   "wetland",
   "wood"
+]);
+
+const RECOGNIZABLE_BUILDING_SUBTYPES = new Set([
+  "basilica",
+  "cathedral",
+  "chapel",
+  "church",
+  "monastery",
+  "mosque",
+  "palace",
+  "shrine",
+  "synagogue",
+  "temple"
+]);
+
+const RECOGNIZABLE_BUILDING_ADDRESS_TYPES = new Set([
+  "basilica",
+  "cathedral",
+  "chapel",
+  "church",
+  "monastery",
+  "mosque",
+  "palace",
+  "place_of_worship",
+  "shrine",
+  "synagogue",
+  "temple"
 ]);
 
 const QUERY_LEADING_GENERIC_TOKENS = new Set([
@@ -167,6 +200,15 @@ function isGenericReverseResult(result) {
   const osmClass = normalizeOsmToken(result?.osmClass);
   const osmSubtype = normalizeOsmToken(result?.osmSubtype);
   const addressType = normalizeOsmToken(result?.addressType);
+
+  const isRecognizableBuilding =
+    osmClass === "building" &&
+    (RECOGNIZABLE_BUILDING_SUBTYPES.has(osmSubtype) ||
+      RECOGNIZABLE_BUILDING_ADDRESS_TYPES.has(addressType));
+
+  if (isRecognizableBuilding) {
+    return false;
+  }
 
   const isGenericNatural =
     osmClass === "natural" &&
@@ -509,6 +551,96 @@ async function cleanupExpiredCache(prisma, cutoff) {
   } catch (err) {
     console.warn("[geocode] cache cleanup failed:", err?.message || err);
   }
+}
+
+function parseUrlSafe(value) {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+function isCloudinarySecureUrlForThisCloud(secureUrl) {
+  const url = parseUrlSafe(secureUrl);
+  if (!url) return false;
+
+  if (url.protocol !== "https:") return false;
+  if (url.hostname !== "res.cloudinary.com") return false;
+
+  return url.pathname.startsWith(`/${ENV.CLOUDINARY_CLOUD_NAME}/image/upload/`);
+}
+
+function urlPathContainsPublicId(secureUrl, publicId) {
+  const url = parseUrlSafe(secureUrl);
+  if (!url) return false;
+
+  const marker = `/${publicId}`;
+  const idx = url.pathname.lastIndexOf(marker);
+  if (idx < 0) return false;
+
+  const after = url.pathname.slice(idx + marker.length);
+  return after === "" || after.startsWith(".") || after.startsWith("/");
+}
+
+function validatePhotoSuggestionImageForUser(userId, input) {
+  const publicId = String(input.publicId || "").trim();
+  const imageUrl = String(input.imageUrl || "").trim();
+
+  const folderPrefix = getUploadFolderForUser(userId) + "/";
+
+  if (!publicId.startsWith(folderPrefix)) {
+    throw new HttpError(400, "Validation failed", {
+      publicId: `publicId must start with "${folderPrefix}"`
+    });
+  }
+
+  if (!isCloudinarySecureUrlForThisCloud(imageUrl)) {
+    throw new HttpError(400, "Validation failed", {
+      imageUrl: "imageUrl must be a Cloudinary https URL for this account"
+    });
+  }
+
+  if (!urlPathContainsPublicId(imageUrl, publicId)) {
+    throw new HttpError(400, "Validation failed", {
+      imageUrl: "imageUrl does not match publicId"
+    });
+  }
+}
+
+export async function photoSuggestion(req, res) {
+  const parsed = geocodePhotoSuggestionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new HttpError(400, "Validation failed", formatZodErrors(parsed.error));
+  }
+
+  validatePhotoSuggestionImageForUser(req.userId, parsed.data);
+
+  const limit = checkGeocodeLimit(req.userId, req.ip);
+  if (!limit.ok) {
+    setRetryAfterHeader(res, limit.retryAfterMs);
+    throw new HttpError(429, "Too many geocoding requests, please slow down");
+  }
+
+  const result = await suggestLocationFromPhoto(parsed.data, {
+    logContext: {
+      action: "photo-suggestion",
+      userId: req.userId,
+      publicId: parsed.data.publicId
+    }
+  });
+
+  return res.status(200).json({
+    ok: true,
+    suggestion: result.suggestion,
+    reason: result.reason,
+    ...devMeta({
+      stage: "photo-suggestion",
+      mode: result.suggestion?.mode || null,
+      detectedName: result.suggestion?.detectedName || null,
+      confidence: result.suggestion?.confidence ?? null
+    })
+  });
 }
 
 export async function search(req, res) {

@@ -8,6 +8,7 @@ import postsRoutes from "./posts.routes.js";
 import mapRoutes from "./map.routes.js";
 import aiRoutes from "./ai.routes.js";
 import usersRoutes from "./users.routes.js";
+import dashboardRoutes from "./dashboard.routes.js";
 
 const router = Router();
 
@@ -26,5 +27,6 @@ router.use("/uploads", uploadsRoutes);
 router.use("/posts", postsRoutes);
 router.use("/map", mapRoutes);
 router.use("/ai", aiRoutes);
+router.use("/dashboard", dashboardRoutes);
 
 export default router;

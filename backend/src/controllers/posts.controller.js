@@ -14,6 +14,7 @@ import {
   verifyPhotoLocationForPost,
   toPhotoVerificationPersistenceFields
 } from "../services/photoLocationVerification.service.js";
+import { checkTextLocationConsistencyForPost } from "../services/textLocationConsistency.service.js";
 import { mapMapFeedRowToApi, mapPostToApi } from "../mappers/post.mapper.js";
 import {
   classifyPlaceCategory,
@@ -550,6 +551,21 @@ function buildPhotoVerificationInput(location, images) {
   };
 }
 
+function buildTextLocationConsistencyInput({ title, content }, selectedLocation) {
+  return {
+    title,
+    content,
+    selectedLocation: {
+      lat: selectedLocation.latitude,
+      lng: selectedLocation.longitude,
+      locationName: selectedLocation.locationName,
+      city: selectedLocation.city,
+      country: selectedLocation.country,
+      displayName: selectedLocation.displayName
+    }
+  };
+}
+
 function sendPhotoLocationMismatch(res, result) {
   return res.status(422).json({
     ok: false,
@@ -561,6 +577,21 @@ function sendPhotoLocationMismatch(res, result) {
       confidence: result.confidence,
       distanceMeters: result.distanceMeters,
       reasons: Array.isArray(result.reasons) ? result.reasons : []
+    }
+  });
+}
+
+function sendTextLocationMismatch(res, result) {
+  return res.status(422).json({
+    ok: false,
+    code: "TEXT_LOCATION_MISMATCH",
+    message: "Your title or description seems to describe a different location than the one selected.",
+    consistency: {
+      mentionedLocation: result.mentionedLocation,
+      selectedLocation: result.selectedLocation,
+      confidence: result.confidence,
+      distanceMeters: result.distanceMeters,
+      reason: result.reason
     }
   });
 }
@@ -639,6 +670,31 @@ async function resolvePlaceClassification(input, { logContext = {} } = {}) {
     osmClass: normalizeOptionalText(osmClass),
     osmSubtype: normalizeOptionalText(osmSubtype),
     addressType: normalizeOptionalText(addressType)
+  };
+}
+
+function shouldPromoteCategoryFromPhotoVerification(photoVerification) {
+  return (
+    photoVerification?.status === "match" &&
+    Number.isFinite(photoVerification.confidence) &&
+    photoVerification.confidence >= ENV.PHOTO_LOCATION_SUGGESTION_MIN_SCORE &&
+    Number.isFinite(photoVerification.distanceMeters) &&
+    photoVerification.distanceMeters <= ENV.LANDMARK_MATCH_MAX_DISTANCE_METERS
+  );
+}
+
+function applyPhotoVerificationCategoryFallback(classification, photoVerification) {
+  if (!classification || classification.placeCategory !== DEFAULT_PLACE_CATEGORY) {
+    return classification;
+  }
+
+  if (!shouldPromoteCategoryFromPhotoVerification(photoVerification)) {
+    return classification;
+  }
+
+  return {
+    ...classification,
+    placeCategory: "urban_landmark"
   };
 }
 
@@ -804,7 +860,30 @@ export async function create(req, res) {
     return sendPhotoLocationMismatch(res, photoVerification);
   }
 
-  const classification = await resolvePlaceClassification(
+  const textLocationConsistency = await checkTextLocationConsistencyForPost(
+    buildTextLocationConsistencyInput(
+      {
+        title: parsed.data.title,
+        content: parsed.data.content
+      },
+      verificationLocation
+    ),
+    {
+      logContext: {
+        operation: "create",
+        userId
+      }
+    }
+  );
+
+  // Intentionally do NOT cleanup draft uploads on text-location mismatch here.
+  // The user may want to correct the text or selected location and retry with
+  // the same already-uploaded images.
+  if (!textLocationConsistency.ok) {
+    return sendTextLocationMismatch(res, textLocationConsistency);
+  }
+
+  let classification = await resolvePlaceClassification(
     buildLocationClassificationInput(incomingLocation),
     {
       logContext: {
@@ -813,6 +892,8 @@ export async function create(req, res) {
       }
     }
   );
+
+  classification = applyPhotoVerificationCategoryFallback(classification, photoVerification);
 
   const sentimentAnalysis = analyzeSentiment({
     title: parsed.data.title,
@@ -1166,6 +1247,30 @@ export async function update(req, res) {
     return sendPhotoLocationMismatch(res, photoVerification);
   }
 
+  const textLocationConsistency = await checkTextLocationConsistencyForPost(
+    buildTextLocationConsistencyInput(
+      {
+        title: bodyParsed.data.title,
+        content: bodyParsed.data.content
+      },
+      verificationLocation
+    ),
+    {
+      logContext: {
+        operation: "update",
+        userId,
+        postId
+      }
+    }
+  );
+
+  // Intentionally do NOT cleanup draft uploads on text-location mismatch here.
+  // The user may want to correct the text or selected location and retry with
+  // the same already-uploaded images.
+  if (!textLocationConsistency.ok) {
+    return sendTextLocationMismatch(res, textLocationConsistency);
+  }
+
   const reusableStoredPlaceCategory = sameLocation
     ? getReusableStoredPlaceCategory(existingPost.place_category)
     : null;
@@ -1194,6 +1299,8 @@ export async function update(req, res) {
       }
     );
   }
+
+  classification = applyPhotoVerificationCategoryFallback(classification, photoVerification);
 
   const sentimentAnalysis = analyzeSentiment({
     title: bodyParsed.data.title,

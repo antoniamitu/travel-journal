@@ -185,7 +185,37 @@ const envSchema = z
       .int("LANDMARK_MISMATCH_MIN_DISTANCE_METERS must be an integer")
       .min(1, "LANDMARK_MISMATCH_MIN_DISTANCE_METERS must be at least 1")
       .max(200_000, "LANDMARK_MISMATCH_MIN_DISTANCE_METERS must be at most 200000")
-      .default(5000)
+      .default(5000),
+
+    PHOTO_LOCATION_SUGGESTION_MIN_SCORE: z.coerce
+      .number()
+      .min(0, "PHOTO_LOCATION_SUGGESTION_MIN_SCORE must be between 0 and 1")
+      .max(1, "PHOTO_LOCATION_SUGGESTION_MIN_SCORE must be between 0 and 1")
+      .default(0.7),
+
+    PHOTO_LOCATION_MISMATCH_MIN_SCORE: z.coerce
+      .number()
+      .min(0, "PHOTO_LOCATION_MISMATCH_MIN_SCORE must be between 0 and 1")
+      .max(1, "PHOTO_LOCATION_MISMATCH_MIN_SCORE must be between 0 and 1")
+      .default(0.75),
+
+    TEXT_LOCATION_CONSISTENCY_ENABLED: z.preprocess(
+      normalizeBoolean,
+      z.boolean().default(false)
+    ),
+
+    TEXT_LOCATION_EXTRACT_MIN_CONFIDENCE: z.coerce
+      .number()
+      .min(0, "TEXT_LOCATION_EXTRACT_MIN_CONFIDENCE must be between 0 and 1")
+      .max(1, "TEXT_LOCATION_EXTRACT_MIN_CONFIDENCE must be between 0 and 1")
+      .default(0.9),
+
+    TEXT_LOCATION_MISMATCH_MIN_DISTANCE_METERS: z.coerce
+      .number()
+      .int("TEXT_LOCATION_MISMATCH_MIN_DISTANCE_METERS must be an integer")
+      .min(1, "TEXT_LOCATION_MISMATCH_MIN_DISTANCE_METERS must be at least 1")
+      .max(5_000_000, "TEXT_LOCATION_MISMATCH_MIN_DISTANCE_METERS must be at most 5000000")
+      .default(50_000)
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === "development" && !env.FRONTEND_URL_DEV) {
@@ -235,6 +265,42 @@ const envSchema = z
         code: "custom",
         path: ["VISION_STRONG_SCORE"],
         message: "VISION_STRONG_SCORE must be greater than or equal to VISION_MIN_SCORE"
+      });
+    }
+
+    if (env.PHOTO_LOCATION_SUGGESTION_MIN_SCORE > env.VISION_STRONG_SCORE) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["PHOTO_LOCATION_SUGGESTION_MIN_SCORE"],
+        message:
+          "PHOTO_LOCATION_SUGGESTION_MIN_SCORE should be less than or equal to VISION_STRONG_SCORE"
+      });
+    }
+
+    if (env.PHOTO_LOCATION_MISMATCH_MIN_SCORE < env.VISION_MIN_SCORE) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["PHOTO_LOCATION_MISMATCH_MIN_SCORE"],
+        message:
+          "PHOTO_LOCATION_MISMATCH_MIN_SCORE should be greater than or equal to VISION_MIN_SCORE"
+      });
+    }
+
+    if (env.PHOTO_LOCATION_MISMATCH_MIN_SCORE < env.PHOTO_LOCATION_SUGGESTION_MIN_SCORE) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["PHOTO_LOCATION_MISMATCH_MIN_SCORE"],
+        message:
+          "PHOTO_LOCATION_MISMATCH_MIN_SCORE should be greater than or equal to PHOTO_LOCATION_SUGGESTION_MIN_SCORE"
+      });
+    }
+
+    if (env.PHOTO_LOCATION_MISMATCH_MIN_SCORE > env.VISION_STRONG_SCORE) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["PHOTO_LOCATION_MISMATCH_MIN_SCORE"],
+        message:
+          "PHOTO_LOCATION_MISMATCH_MIN_SCORE should be less than or equal to VISION_STRONG_SCORE"
       });
     }
 

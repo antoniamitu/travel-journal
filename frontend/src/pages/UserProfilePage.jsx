@@ -44,8 +44,8 @@ function formatPostDate(value) {
 
 const optimizeCloudinaryUrl = makeCloudinaryOptimizer(
   {
-    thumb: "c_fill,w_900,h_560,g_auto,f_auto,q_auto",
-    card: "c_fill,w_1400,h_900,g_auto,f_auto,q_auto"
+    thumb: "c_fill,w_900,h_620,g_auto,f_auto,q_auto",
+    card: "c_fill,w_1400,h_960,g_auto,f_auto,q_auto"
   },
   "card"
 );
@@ -88,6 +88,24 @@ function getPostLocation(post) {
   return post?.locationName || "Unknown location";
 }
 
+function UserProfileLocationIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      stroke="currentColor"
+      strokeWidth="2.25"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 21s6.8-4.6 6.8-10.8a6.8 6.8 0 1 0-13.6 0C5.2 16.4 12 21 12 21Z" />
+      <circle cx="12" cy="10.2" r="2.35" />
+    </svg>
+  );
+}
+
 function mergeUniquePostsById(existing, incoming) {
   const map = new Map();
 
@@ -106,20 +124,6 @@ function mergeUniquePostsById(existing, incoming) {
   return Array.from(map.values());
 }
 
-
-function getPrivacyUi(privacy) {
-  if (privacy === "private") {
-    return {
-      label: "Private",
-      shell: "bg-slate-100 text-slate-700 ring-slate-200"
-    };
-  }
-
-  return {
-    label: "Public",
-    shell: "bg-sky-50 text-sky-700 ring-sky-200"
-  };
-}
 
 function UserProfileLoadingSkeleton() {
   return (
@@ -294,67 +298,70 @@ function ProfileOverviewCards({ stats }) {
 const UserPostCard = React.memo(function UserPostCard({ post }) {
   const imageUrl = getPreviewImage(post);
   const sentimentUi = getSentimentUi(post?.sentiment, post?.sentimentScore, "profile");
-  const privacyUi = getPrivacyUi(post?.privacy);
   const placeCategoryUi = getPlaceCategoryUi(post?.placeCategory);
+  const location = getPostLocation(post);
 
   return (
-    <article className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-      <Link
-        to={`/posts/${post.id}`}
-        className="block focus:outline-none focus:ring-2 focus:ring-emerald-200"
-      >
-        <div className="overflow-hidden border-b border-slate-200 bg-slate-50">
-          {imageUrl ? (
-            <img
-              src={optimizeCloudinaryUrl(imageUrl, "thumb")}
-              alt={post?.title || "Post preview"}
-              className="h-52 w-full object-cover transition duration-300 group-hover:scale-[1.02]"
-              loading="lazy"
-              decoding="async"
-            />
-          ) : (
-            <div className="flex h-52 items-center justify-center bg-slate-100 px-4 text-center text-sm text-slate-500">
-              No preview image
-            </div>
-          )}
-        </div>
-
-        <div className="p-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ring-1 ${sentimentUi.shell}`}
-            >
-              {sentimentUi.emoji} {sentimentUi.label}
-            </span>
-
-            <span
-              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ring-1 ${privacyUi.shell}`}
-            >
-              {privacyUi.label}
-            </span>
-
-            <span
-              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${placeCategoryUi.shell}`}
-            >
-              <span aria-hidden="true">{placeCategoryUi.icon}</span>
-              <span>{placeCategoryUi.label}</span>
-            </span>
-
-            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-              {formatPostDate(post?.createdAt)}
-            </span>
+    <Link
+      to={`/posts/${post.id}`}
+      className="group overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl focus:outline-none focus:ring-4 focus:ring-cyan-100"
+    >
+      <div className="relative h-64 overflow-hidden bg-slate-100">
+        {imageUrl ? (
+          <img
+            src={optimizeCloudinaryUrl(imageUrl, "thumb")}
+            alt={post?.title || "Post preview"}
+            className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]"
+            loading="lazy"
+            decoding="async"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center px-4 text-center text-sm text-slate-500">
+            No preview image
           </div>
+        )}
 
-          <div className="mt-4 text-sm font-medium text-slate-500">{getPostLocation(post)}</div>
-          <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-900">
-            {post?.title}
-          </h3>
-          <p className="mt-3 text-sm leading-6 text-slate-600">
-            {post?.contentPreview || "Open this memory to see the full story."}
-          </p>
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/45 via-slate-950/8 to-transparent" />
+
+        <span className="absolute bottom-4 left-4 z-20 inline-flex max-w-[calc(100%-2rem)] items-center gap-2 rounded-full bg-white px-4 py-2.5 text-left text-sm font-extrabold text-slate-950 shadow-xl">
+          <UserProfileLocationIcon className="h-5 w-5 shrink-0 text-cyan-600" />
+          <span className="min-w-0 truncate">{location}</span>
+        </span>
+
+        <span className="absolute right-4 top-4 z-20 rounded-full bg-white/92 px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm">
+          {post?.privacy === "private" ? "🔒 Private" : "🌍 Public"}
+        </span>
+      </div>
+
+      <div className="p-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ring-1 ${sentimentUi.shell}`}
+          >
+            {sentimentUi.emoji} {sentimentUi.label}
+          </span>
+
+          <span
+            className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${placeCategoryUi.shell}`}
+          >
+            <span aria-hidden="true">{placeCategoryUi.icon}</span>
+            <span>{placeCategoryUi.label}</span>
+          </span>
+
+          <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+            {formatPostDate(post?.createdAt)}
+          </span>
         </div>
-      </Link>
-    </article>
+
+        <h3 className="mt-4 line-clamp-2 text-xl font-bold tracking-tight text-slate-950">
+          {post?.title || "Untitled post"}
+        </h3>
+
+        <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">
+          {post?.contentPreview || "Open this memory to see the full story."}
+        </p>
+      </div>
+    </Link>
   );
 });
 

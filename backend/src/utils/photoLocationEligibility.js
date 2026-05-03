@@ -16,6 +16,7 @@ const ELIGIBLE_OSM_TYPES = new Map([
   [
     "historic",
     new Set([
+      "archaeological_site",
       "castle",
       "church",
       "fort",
@@ -29,7 +30,7 @@ const ELIGIBLE_OSM_TYPES = new Map([
     ])
   ],
   ["tourism", new Set(["attraction", "gallery", "museum"])],
-  ["amenity", new Set(["museum", "place_of_worship", "theatre", "theater"])],
+  ["amenity", new Set(["clock", "museum", "place_of_worship", "theatre", "theater"])],
   [
     "building",
     new Set([
@@ -158,6 +159,25 @@ function buildNormalizedLocation(input = {}) {
   };
 }
 
+export function isEligiblePhotoLocationOsmType(input = {}) {
+  const normalized = buildNormalizedLocation(input);
+
+  const allowedSubtypes = normalized.osmClass
+    ? ELIGIBLE_OSM_TYPES.get(normalized.osmClass)
+    : null;
+
+  return (
+    !!allowedSubtypes &&
+    !!normalized.osmSubtype &&
+    allowedSubtypes.has(normalized.osmSubtype)
+  );
+}
+
+export function isGenericPhotoLocationAddressType(value) {
+  const normalized = normalizeOsmToken(value);
+  return !!normalized && GENERIC_ADDRESS_TYPES.has(normalized);
+}
+
 export function getPhotoLocationEligibility(input = {}) {
   const normalized = buildNormalizedLocation(input);
 
@@ -177,19 +197,20 @@ export function getPhotoLocationEligibility(input = {}) {
     };
   }
 
-  if (normalized.addressType && GENERIC_ADDRESS_TYPES.has(normalized.addressType)) {
-    return {
-      shouldCheck: false,
-      reasons: ["generic_address_type"],
-      normalized
-    };
-  }
-
-  const allowedSubtypes = normalized.osmClass ? ELIGIBLE_OSM_TYPES.get(normalized.osmClass) : null;
-  const isAllowed =
-    !!allowedSubtypes && !!normalized.osmSubtype && allowedSubtypes.has(normalized.osmSubtype);
+    const isAllowed = isEligiblePhotoLocationOsmType({
+    osmClass: normalized.osmClass,
+    osmSubtype: normalized.osmSubtype
+  });
 
   if (!isAllowed) {
+    if (normalized.addressType && GENERIC_ADDRESS_TYPES.has(normalized.addressType)) {
+      return {
+        shouldCheck: false,
+        reasons: ["generic_address_type"],
+        normalized
+      };
+    }
+
     return {
       shouldCheck: false,
       reasons: ["ineligible_osm_type"],

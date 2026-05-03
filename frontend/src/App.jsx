@@ -12,6 +12,7 @@ import PostDetailPage from "./pages/PostDetailPage.jsx";
 import PostEditorPage from "./pages/PostEditorPage.jsx";
 import ProtectedRoute from "./components/auth/ProtectedRoute.jsx";
 import AppLayout from "./components/layout/AppLayout.jsx";
+import DashboardPage from "./pages/DashboardPage.jsx";
 
 function Placeholder({ title }) {
   return (
@@ -20,8 +21,8 @@ function Placeholder({ title }) {
         <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
         <p className="mt-2 text-slate-600">The page you're looking for doesn't exist.</p>
         <p className="mt-4">
-          <Link className="font-semibold text-emerald-600 hover:text-emerald-700" to="/feed">
-            Go to Feed
+          <Link className="font-semibold text-emerald-600 hover:text-emerald-700" to="/profile">
+            Go to Profile
           </Link>
         </p>
       </div>
@@ -32,7 +33,7 @@ function Placeholder({ title }) {
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/feed" replace />} />
+      <Route path="/" element={<Navigate to="/profile" replace />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
@@ -45,6 +46,7 @@ export default function App() {
       >
         <Route path="/feed" element={<FeedPage />} />
         <Route path="/map" element={<MapPage />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/users/:username" element={<UserProfilePage />} />
 

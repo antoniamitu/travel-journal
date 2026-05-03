@@ -66,7 +66,7 @@ export default function LoginPage() {
 
   const redirectTo = useMemo(() => {
     const from = location.state?.from;
-    return from?.pathname ? `${from.pathname}${from.search || ""}${from.hash || ""}` : "/feed";
+    return from?.pathname ? `${from.pathname}${from.search || ""}${from.hash || ""}` : "/profile";
   }, [location.state]);
 
   const emailNormalized = useMemo(() => normalizeEmailForApi(email), [email]);

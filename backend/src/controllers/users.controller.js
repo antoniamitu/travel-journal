@@ -119,6 +119,20 @@ function asNullableNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function hasValidMapCoordinates(post) {
+  const lat = Number(post?.latitude);
+  const lng = Number(post?.longitude);
+
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180
+  );
+}
+
 function mapProfileRecentRowToApi(row, viewerUserId) {
   const base = mapMapFeedRowToApi(row);
   const isOwner = row.user_id === viewerUserId;
@@ -319,7 +333,7 @@ export async function getProfile(req, res) {
 
   const user = await getAuthenticatedUserOrThrow(prisma, userId);
 
-  const [statsRows, sentimentRows, locationRows, recentRows] = await prisma.$transaction([
+  const [statsRows, sentimentRows, locationRows, postRows] = await prisma.$transaction([
     prisma.$queryRaw(
       Prisma.sql`
         SELECT
@@ -355,13 +369,14 @@ export async function getProfile(req, res) {
         ${PROFILE_POSTS_SELECT_SQL}
         WHERE p.user_id = ${userId}
         ORDER BY p.created_at DESC, p.id DESC
-        LIMIT ${PROFILE_RECENT_LIMIT}
       `
     )
   ]);
 
   const stats = mapProfileStats(statsRows?.[0], sentimentRows, locationRows);
-  const recentPosts = (recentRows || []).map((row) => mapProfileRecentRowToApi(row, userId));
+  const posts = (postRows || []).map((row) => mapProfileRecentRowToApi(row, userId));
+  const recentPosts = posts.slice(0, PROFILE_RECENT_LIMIT);
+  const mapPosts = posts.filter(hasValidMapCoordinates);
 
   return res.status(200).json({
     user: {
@@ -371,7 +386,9 @@ export async function getProfile(req, res) {
       createdAt: user.created_at
     },
     stats,
-    recentPosts
+    posts,
+    recentPosts,
+    mapPosts
   });
 }
 

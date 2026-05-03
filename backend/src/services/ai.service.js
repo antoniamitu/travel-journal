@@ -265,6 +265,10 @@ async function withPendingGeneration(locationKey, factory) {
   return promise;
 }
 
+export async function generateGeminiText(prompt) {
+  return await generateLocationContent(prompt);
+}
+
 export async function getLearnMoreContent(prisma, input) {
   const latitude = fixNegZero(input.latitude);
   const longitude = fixNegZero(input.longitude);

@@ -84,7 +84,7 @@ const ENTERTAINMENT_AMENITY_SUBTYPES = new Set([
 
 const SHOPPING_AMENITY_SUBTYPES = new Set(["marketplace"]);
 
-const URBAN_LANDMARK_AMENITY_SUBTYPES = new Set(["fountain"]);
+const URBAN_LANDMARK_AMENITY_SUBTYPES = new Set(["clock", "fountain"]);
 
 const RELIGIOUS_BUILDING_SUBTYPES = new Set([
   "cathedral",

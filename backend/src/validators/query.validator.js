@@ -32,3 +32,25 @@ export const geocodeReverseSchema = z.object({
       .max(180, "Longitude must be between -180 and 180")
   )
 });
+
+export const geocodePhotoSuggestionSchema = z.object({
+  imageUrl: z
+    .preprocess(
+      trimOrEmpty,
+      z
+        .string()
+        .url("imageUrl must be a valid URL")
+        .max(1000, "imageUrl must be at most 1000 characters")
+    )
+    .refine((value) => value.startsWith("https://"), {
+      message: "imageUrl must use https"
+    }),
+
+  publicId: z.preprocess(
+    trimOrEmpty,
+    z
+      .string()
+      .min(1, "publicId is required")
+      .max(255, "publicId must be at most 255 characters")
+  )
+});

@@ -55,8 +55,8 @@ function normalizeStats(value) {
   };
 }
 
-function normalizeRecentPosts(value) {
-  return Array.isArray(value) ? value : [];
+function normalizePosts(value) {
+  return Array.isArray(value) ? value.filter((post) => post && post.id != null) : [];
 }
 
 function normalizeAccountSuggestions(value) {
@@ -83,7 +83,9 @@ export async function getOwnProfile(options = {}) {
   return {
     user: data?.user ?? null,
     stats: normalizeStats(data?.stats),
-    recentPosts: normalizeRecentPosts(data?.recentPosts)
+    posts: normalizePosts(data?.posts),
+    recentPosts: normalizePosts(data?.recentPosts),
+    mapPosts: normalizePosts(data?.mapPosts)
   };
 }
 
@@ -118,7 +120,7 @@ export async function getUserProfileByUsername(username, params = {}, options = 
   return {
     user: data?.user ?? null,
     stats: normalizeStats(data?.stats),
-    posts: normalizeRecentPosts(data?.posts),
+    posts: normalizePosts(data?.posts),
     total: asSafeNumber(data?.total, 0)
   };
 }

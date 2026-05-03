@@ -3,7 +3,7 @@ import { Router } from "express";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireJsonBody } from "../utils/requireJsonBody.js";
-import { search, reverse } from "../controllers/geocode.controller.js";
+import { search, reverse, photoSuggestion } from "../controllers/geocode.controller.js";
 
 const router = Router();
 
@@ -14,6 +14,7 @@ router.get(
   })
 );
 
+router.post("/photo-suggestion", requireAuth, requireJsonBody, asyncHandler(photoSuggestion));
 router.post("/search", requireAuth, requireJsonBody, asyncHandler(search));
 router.post("/reverse", requireAuth, requireJsonBody, asyncHandler(reverse));
 
