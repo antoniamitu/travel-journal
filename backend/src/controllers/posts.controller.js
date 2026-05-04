@@ -27,6 +27,13 @@ import { searchPlaceForEnrichment } from "../services/nominatim.service.js";
 import { canEnqueue, nominatimQueue } from "../services/nominatimQueue.js";
 import analyzeSentiment from "../utils/analyzeSentiment.js";
 import { SENTIMENT_VALUES } from "../constants/sentiment.js";
+import {
+  buildLocationSearchKeys,
+  normalizeCityForStorage,
+  normalizeCountryForStorage,
+  normalizeLocationCompareKey,
+  normalizeLocationSearchKey
+} from "../utils/locationText.js";
 
 const fixNegZero = (n) => (Object.is(n, -0) ? 0 : n);
 
@@ -106,8 +113,7 @@ const MAX_SUGGEST_LIMIT = 10;
 const ALLOWED_FEED_SENTIMENTS = new Set(SENTIMENT_VALUES);
 const ALLOWED_FEED_CATEGORIES = new Set(PLACE_CATEGORY_VALUES);
 const DEFAULT_PLACE_CATEGORY = "other";
-const COMBINING_MARKS_RE = /[\u0300-\u036f]/g;
-const NON_ALPHANUMERIC_RE = /[^a-z0-9]+/g;
+
 
 const FEED_POSTS_SELECT_SQL = Prisma.sql`
   SELECT
@@ -207,6 +213,65 @@ function uniqueStrings(values) {
   return out;
 }
 
+function buildFeedLocationSearchSql(searchKeys) {
+  const keys = uniqueStrings(searchKeys || []).filter((key) => key.length >= 3);
+  if (keys.length === 0) {
+    return Prisma.empty;
+  }
+
+  const clauses = [];
+
+  for (const key of keys) {
+    const pattern = `%${key}%`;
+
+    clauses.push(Prisma.sql`
+      regexp_replace(unaccent(lower(COALESCE(p.location_name, ''))), '[^a-z0-9]+', '', 'g') LIKE ${pattern}
+    `);
+
+    clauses.push(Prisma.sql`
+      regexp_replace(unaccent(lower(COALESCE(p.city, ''))), '[^a-z0-9]+', '', 'g') LIKE ${pattern}
+    `);
+
+    clauses.push(Prisma.sql`
+      regexp_replace(unaccent(lower(COALESCE(p.country, ''))), '[^a-z0-9]+', '', 'g') LIKE ${pattern}
+    `);
+
+    clauses.push(Prisma.sql`
+      regexp_replace(
+        unaccent(
+          lower(
+            concat_ws(' ', COALESCE(p.location_name, ''), COALESCE(p.city, ''), COALESCE(p.country, ''))
+          )
+        ),
+        '[^a-z0-9]+',
+        '',
+        'g'
+      ) LIKE ${pattern}
+    `);
+  }
+
+  return Prisma.sql`
+    AND (${Prisma.join(clauses, " OR ")})
+  `;
+}
+
+function buildSuggestionLocationSearchSql(searchKeys) {
+  const keys = uniqueStrings(searchKeys || []).filter((key) => key.length >= 3);
+  if (keys.length === 0) {
+    return Prisma.sql`WHERE FALSE`;
+  }
+
+  const clauses = keys.map((key) => {
+    return Prisma.sql`
+      regexp_replace(unaccent(lower(COALESCE(query_value, ''))), '[^a-z0-9]+', '', 'g') LIKE ${`${key}%`}
+    `;
+  });
+
+  return Prisma.sql`
+    WHERE (${Prisma.join(clauses, " OR ")})
+  `;
+}
+
 function getP2002Target(err) {
   const target = err?.meta?.target;
   return Array.isArray(target) ? target.join(",") : String(target || "");
@@ -259,18 +324,6 @@ function mapFeedRowToApi(row, viewerUserId) {
   };
 }
 
-function normalizeLooseSearchKey(value) {
-  if (typeof value !== "string") {
-    return "";
-  }
-
-  return value
-    .trim()
-    .normalize("NFKD")
-    .replace(COMBINING_MARKS_RE, "")
-    .toLowerCase()
-    .replace(NON_ALPHANUMERIC_RE, "");
-}
 
 function buildSuggestionLabel(kind, rawLabel, city, country) {
   const baseLabel = String(rawLabel || "").trim();
@@ -284,18 +337,18 @@ function buildSuggestionLabel(kind, rawLabel, city, country) {
     return baseLabel;
   }
 
-  const baseKey = normalizeLooseSearchKey(baseLabel);
+  const baseKey = normalizeLocationSearchKey(baseLabel);
   const extras = [];
 
   if (city) {
-    const cityKey = normalizeLooseSearchKey(city);
+    const cityKey = normalizeLocationSearchKey(city, { kind: "city" });
     if (cityKey && !baseKey.includes(cityKey)) {
       extras.push(city);
     }
   }
 
   if (country) {
-    const countryKey = normalizeLooseSearchKey(country);
+    const countryKey = normalizeLocationSearchKey(country, { kind: "country" });
     if (countryKey && !baseKey.includes(countryKey)) {
       extras.push(country);
     }
@@ -312,8 +365,8 @@ function parseFeedListQuery(query) {
   const errors = {};
   let page = DEFAULT_FEED_PAGE;
   let limit = DEFAULT_FEED_LIMIT;
-  let q;
-  let qSearchKey;
+  
+  let qSearchKeys = [];
   let sentiment;
   let category;
 
@@ -357,12 +410,10 @@ function parseFeedListQuery(query) {
     if (rawQ.length > MAX_FEED_QUERY_LENGTH) {
       errors.q = `q must be at most ${MAX_FEED_QUERY_LENGTH} characters`;
     } else if (rawQ !== "") {
-      q = rawQ;
-      qSearchKey = normalizeLooseSearchKey(rawQ);
+      qSearchKeys = buildLocationSearchKeys(rawQ);
 
-      if (!qSearchKey) {
-        q = undefined;
-        qSearchKey = undefined;
+      if (qSearchKeys.length === 0) {
+        qSearchKeys = [];
       }
     }
   }
@@ -396,13 +447,13 @@ function parseFeedListQuery(query) {
     throw new HttpError(400, "Validation failed", errors);
   }
 
-  return { page, limit, offset, q, qSearchKey, sentiment, category };
+  return { page, limit, offset, qSearchKeys, sentiment, category };
 }
 
 function parseLocationSuggestQuery(query) {
   const errors = {};
   let q = "";
-  let qSearchKey = "";
+  let qSearchKeys = [];
   let limit = DEFAULT_SUGGEST_LIMIT;
 
   if (query?.q != null) {
@@ -431,19 +482,36 @@ function parseLocationSuggestQuery(query) {
     }
   }
 
-  qSearchKey = normalizeLooseSearchKey(q);
+  qSearchKeys = buildLocationSearchKeys(q);
 
   if (Object.keys(errors).length > 0) {
     throw new HttpError(400, "Validation failed", errors);
   }
 
-  return { q, qSearchKey, limit };
+ return { q, qSearchKeys, limit };
 }
 
 function normalizeOptionalText(value) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed === "" ? null : trimmed;
+}
+const LOCATION_COORDINATE_EPSILON = 1e-7;
+
+function isSameCoordinate(a, b) {
+  const first = fixNegZero(Number(a));
+  const second = fixNegZero(Number(b));
+
+  return (
+    Number.isFinite(first) &&
+    Number.isFinite(second) &&
+    Math.abs(first - second) <= LOCATION_COORDINATE_EPSILON
+  );
+}
+
+function isSameOptionalLocationText(a, b, kind = "generic") {
+  return normalizeLocationCompareKey(a || "", { kind }) ===
+    normalizeLocationCompareKey(b || "", { kind });
 }
 
 function getReusableStoredPlaceCategory(value) {
@@ -462,13 +530,11 @@ function getReusableStoredPlaceCategory(value) {
 
 function isSameLocationCore(existingPost, incomingLocation) {
   return (
-    fixNegZero(existingPost.latitude) === fixNegZero(incomingLocation.latitude) &&
-    fixNegZero(existingPost.longitude) === fixNegZero(incomingLocation.longitude) &&
-    normalizeOptionalText(existingPost.location_name) ===
-      normalizeOptionalText(incomingLocation.locationName) &&
-    normalizeOptionalText(existingPost.city) === normalizeOptionalText(incomingLocation.city) &&
-    normalizeOptionalText(existingPost.country) ===
-      normalizeOptionalText(incomingLocation.country)
+    isSameCoordinate(existingPost.latitude, incomingLocation.latitude) &&
+    isSameCoordinate(existingPost.longitude, incomingLocation.longitude) &&
+    isSameOptionalLocationText(existingPost.location_name, incomingLocation.locationName) &&
+    isSameOptionalLocationText(existingPost.city, incomingLocation.city, "city") &&
+    isSameOptionalLocationText(existingPost.country, incomingLocation.country, "country")
   );
 }
 
@@ -833,8 +899,8 @@ export async function create(req, res) {
     latitude,
     longitude,
     locationName: parsed.data.locationName,
-    city: parsed.data.city,
-    country: parsed.data.country,
+    city: normalizeCityForStorage(parsed.data.city) ?? null,
+    country: normalizeCountryForStorage(parsed.data.country) ?? null,
     displayName: parsed.data.displayName,
     osmClass: parsed.data.osmClass,
     osmSubtype: parsed.data.osmSubtype,
@@ -909,8 +975,8 @@ export async function create(req, res) {
         latitude,
         longitude,
         location_name: parsed.data.locationName,
-        city: parsed.data.city,
-        country: parsed.data.country,
+        city: incomingLocation.city,
+        country: incomingLocation.country,
         place_category: classification.placeCategory,
         osm_class: classification.osmClass,
         osm_subtype: classification.osmSubtype,
@@ -960,27 +1026,9 @@ export async function create(req, res) {
 export async function listFeed(req, res) {
   const prisma = getPrisma();
   const userId = req.userId;
-  const { page, limit, offset, qSearchKey, sentiment, category } = parseFeedListQuery(req.query);
+  const { page, limit, offset, qSearchKeys, sentiment, category } = parseFeedListQuery(req.query);
 
-  const searchSql = qSearchKey
-    ? Prisma.sql`
-        AND (
-          regexp_replace(unaccent(lower(COALESCE(p.location_name, ''))), '[^a-z0-9]+', '', 'g') LIKE ${`%${qSearchKey}%`}
-          OR regexp_replace(unaccent(lower(COALESCE(p.city, ''))), '[^a-z0-9]+', '', 'g') LIKE ${`%${qSearchKey}%`}
-          OR regexp_replace(unaccent(lower(COALESCE(p.country, ''))), '[^a-z0-9]+', '', 'g') LIKE ${`%${qSearchKey}%`}
-          OR regexp_replace(
-            unaccent(
-              lower(
-                concat_ws(' ', COALESCE(p.location_name, ''), COALESCE(p.city, ''), COALESCE(p.country, ''))
-              )
-            ),
-            '[^a-z0-9]+',
-            '',
-            'g'
-          ) LIKE ${`%${qSearchKey}%`}
-        )
-      `
-    : Prisma.empty;
+  const searchSql = buildFeedLocationSearchSql(qSearchKeys);
 
   const sentimentSql = sentiment ? Prisma.sql` AND p.sentiment = ${sentiment}` : Prisma.empty;
   const categorySql = category ? Prisma.sql` AND p.place_category = ${category}` : Prisma.empty;
@@ -1020,9 +1068,10 @@ export async function listFeed(req, res) {
 export async function suggestLocations(req, res) {
   const prisma = getPrisma();
   const userId = req.userId;
-  const { qSearchKey, limit } = parseLocationSuggestQuery(req.query);
+  const { q, qSearchKeys, limit } = parseLocationSuggestQuery(req.query);
+  const rawSearchKey = normalizeLocationSearchKey(q, { applyAliases: false });
 
-  if (!qSearchKey || qSearchKey.length < 3) {
+  if (!rawSearchKey || rawSearchKey.length < 3) {
     return res.status(200).json({
       ok: true,
       suggestions: []
@@ -1089,7 +1138,7 @@ export async function suggestLocations(req, res) {
         country,
         first_seen_at
       FROM candidates
-      WHERE regexp_replace(unaccent(lower(COALESCE(query_value, ''))), '[^a-z0-9]+', '', 'g') LIKE ${`${qSearchKey}%`}
+      ${buildSuggestionLocationSearchSql(qSearchKeys)}
       ORDER BY
         CASE kind
           WHEN 'place' THEN 0
@@ -1122,10 +1171,10 @@ export async function suggestLocations(req, res) {
 
     const dedupeKey = [
       kind,
-      normalizeLooseSearchKey(rawLabel),
-      normalizeLooseSearchKey(rawQueryValue),
-      normalizeLooseSearchKey(city || ""),
-      normalizeLooseSearchKey(country || "")
+      normalizeLocationSearchKey(rawLabel),
+      normalizeLocationSearchKey(rawQueryValue),
+      normalizeLocationSearchKey(city || "", { kind: "city" }),
+      normalizeLocationSearchKey(country || "", { kind: "country" })
     ].join("::");
     if (seen.has(dedupeKey)) continue;
 
@@ -1213,8 +1262,8 @@ export async function update(req, res) {
     latitude,
     longitude,
     locationName: bodyParsed.data.locationName,
-    city: bodyParsed.data.city,
-    country: bodyParsed.data.country,
+    city: normalizeCityForStorage(bodyParsed.data.city) ?? null,
+    country: normalizeCountryForStorage(bodyParsed.data.country) ?? null,
     displayName: bodyParsed.data.displayName,
     osmClass: bodyParsed.data.osmClass,
     osmSubtype: bodyParsed.data.osmSubtype,
@@ -1327,8 +1376,8 @@ export async function update(req, res) {
           latitude,
           longitude,
           location_name: bodyParsed.data.locationName,
-          city: bodyParsed.data.city,
-          country: bodyParsed.data.country,
+          city: incomingLocation.city,
+          country: incomingLocation.country,
           place_category: classification.placeCategory,
           osm_class: classification.osmClass,
           osm_subtype: classification.osmSubtype,

@@ -6,6 +6,7 @@ import { HttpError } from "../utils/httpError.js";
 const BASE_URL = ENV.NOMINATIM_BASE_URL;
 const REQUEST_TIMEOUT_MS = 4000;
 const RETRY_DELAY_MS = 1000;
+export const NOMINATIM_ACCEPT_LANGUAGE = "en";
 
 function isUpstreamUnavailable(status) {
   return status === 503 || status === 504;
@@ -41,11 +42,15 @@ async function nominatimGet(path, params) {
 
   try {
     const res = await axios.get(`${BASE_URL}${path}`, {
-      params,
+      params: {
+        ...params,
+        "accept-language": NOMINATIM_ACCEPT_LANGUAGE
+      },
       timeout: REQUEST_TIMEOUT_MS,
       headers: {
         "User-Agent": ENV.NOMINATIM_USER_AGENT,
-        Accept: "application/json"
+        Accept: "application/json",
+        "Accept-Language": NOMINATIM_ACCEPT_LANGUAGE
       },
       validateStatus: () => true
     });

@@ -1,4 +1,5 @@
 // backend/src/utils/mapNominatim.js
+import { normalizeCityForStorage, normalizeCountryForStorage } from "./locationText.js";
 
 function pickCity(address = {}) {
   return (
@@ -6,8 +7,6 @@ function pickCity(address = {}) {
     address.town ||
     address.village ||
     address.municipality ||
-    address.county ||
-    address.state ||
     null
   );
 }
@@ -106,8 +105,8 @@ function buildMappedResult(
 
   const address = item.address && typeof item.address === "object" ? item.address : {};
 
-  const city = normalizeOptionalText(pickCity(address));
-  const country = normalizeOptionalText(address.country);
+  const city = normalizeCityForStorage(pickCity(address)) ?? null;
+  const country = normalizeCountryForStorage(address.country) ?? null;
   const displayName = normalizeOptionalText(item.display_name);
   const exactName = normalizeOptionalText(item.name);
 

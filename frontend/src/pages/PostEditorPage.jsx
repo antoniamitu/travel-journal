@@ -139,7 +139,7 @@ function mapPostToForm(post) {
     locationName: post?.locationName || "",
     city: post?.city || "",
     country: post?.country || "",
-    displayName: post?.displayName || "",
+    displayName: "",
     osmClass: post?.osmClass || "",
     osmSubtype: post?.osmSubtype || "",
     addressType: post?.addressType || "",
@@ -1282,11 +1282,25 @@ const nonLocationControlsDisabled = isSubmitting;
     }
 
     setForm((prev) => ({
-        ...prev,
-        latitude: numericLat,
-        longitude: numericLng
-      }));
-      setReverseStatus("Looking up location…");
+      ...prev,
+      latitude: numericLat,
+      longitude: numericLng,
+      locationName: "",
+      city: "",
+      country: "",
+      displayName: "",
+      osmClass: "",
+      osmSubtype: "",
+      addressType: ""
+    }));
+
+    setLocationQuery("");
+    setFieldErrors((prev) => ({
+      ...prev,
+      locationName: ""
+    }));
+
+    setReverseStatus("Looking up location…");
 
       if (reverseAbortRef.current) reverseAbortRef.current.abort();
       reverseAbortRef.current = new AbortController();

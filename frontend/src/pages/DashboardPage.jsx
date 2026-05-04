@@ -524,29 +524,39 @@ function PhotoVerificationCard({ value }) {
   const total = match + uncertain + skipped + mismatch;
 
   const rows = [
-    {
-      key: "match",
-      label: "Verified",
-      value: match,
-      className: "bg-emerald-500",
-      badgeClass: "bg-emerald-50 text-emerald-700 ring-emerald-200"
-    },
-    {
-      key: "uncertain",
-      label: "Inconclusive",
-      value: uncertain,
-      className: "bg-amber-500",
-      badgeClass: "bg-amber-50 text-amber-700 ring-amber-200"
-    },
-    {
-      key: "skipped",
-      label: "Skipped",
-      value: skipped,
-      className: "bg-slate-400",
-      badgeClass: "bg-slate-100 text-slate-700 ring-slate-200"
-    }
+  {
+    key: "match",
+    label: "Verified",
+    value: match,
+    className: "bg-emerald-500",
+    badgeClass: "bg-emerald-50 text-emerald-700 ring-emerald-200"
+  },
+  {
+    key: "uncertain",
+    label: "Inconclusive",
+    value: uncertain,
+    className: "bg-amber-500",
+    badgeClass: "bg-amber-50 text-amber-700 ring-amber-200"
+  },
+  {
+    key: "skipped",
+    label: "Skipped",
+    value: skipped,
+    className: "bg-slate-400",
+    badgeClass: "bg-slate-100 text-slate-700 ring-slate-200"
+  },
+  ...(mismatch > 0
+    ? [
+        {
+          key: "mismatch",
+          label: "Blocked mismatch",
+          value: mismatch,
+          className: "bg-rose-500",
+          badgeClass: "bg-rose-50 text-rose-700 ring-rose-200"
+        }
+      ]
+    : [])
   ];
-
   return (
     <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm lg:p-6">
       <div className="text-sm font-bold uppercase tracking-[0.16em] text-slate-500">

@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { getPrisma } from "../config/prisma.js";
 import { HttpError } from "../utils/httpError.js";
 import {
+  getCanonicalLocationDisplayText,
   normalizeLocationCompareKey,
   normalizeLocationDisplayText
 } from "../utils/locationText.js";
@@ -121,15 +122,25 @@ function normalizeCategoryBreakdown(rows) {
     });
 }
 
+function getRankedLocationKind(key) {
+  if (key === "city") return "city";
+  if (key === "country") return "country";
+  return "generic";
+}
+
 function normalizeRankedLocationRows(rows, key, limit = 5) {
   const grouped = new Map();
+  const kind = getRankedLocationKind(key);
 
   for (const row of rows || []) {
-    const label = normalizeLocationDisplayText(row?.[key]);
-    const compareKey = normalizeLocationCompareKey(label);
+    const rawLabel = normalizeLocationDisplayText(row?.[key]);
+    const compareKey = normalizeLocationCompareKey(rawLabel, { kind });
+    const displayLabel =
+      getCanonicalLocationDisplayText(rawLabel, { kind }) || rawLabel;
+
     const count = asSafeNumber(row?.count);
 
-    if (!label || !compareKey || count <= 0) {
+    if (!displayLabel || !compareKey || count <= 0) {
       continue;
     }
 
@@ -137,7 +148,7 @@ function normalizeRankedLocationRows(rows, key, limit = 5) {
 
     if (!current) {
       grouped.set(compareKey, {
-        label,
+        label: displayLabel,
         count,
         strongestSingleCount: count
       });
@@ -146,10 +157,12 @@ function normalizeRankedLocationRows(rows, key, limit = 5) {
 
     current.count += count;
 
-    // Keep the display label that represents the strongest individual spelling.
-    // Example: Romania + România are grouped, and the most common spelling is shown.
-    if (count > current.strongestSingleCount) {
-      current.label = label;
+    if (
+      count > current.strongestSingleCount ||
+      (count === current.strongestSingleCount &&
+        displayLabel.localeCompare(current.label) < 0)
+    ) {
+      current.label = displayLabel;
       current.strongestSingleCount = count;
     }
   }

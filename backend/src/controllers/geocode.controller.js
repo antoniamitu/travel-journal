@@ -13,6 +13,7 @@ import { mapNominatimSearchResults, mapNominatimReverseResult } from "../utils/m
 import { setRetryAfterHeader } from "../utils/slidingWindowRateLimiter.js";
 import { nominatimQueue, canEnqueue, getQueueStats } from "../services/nominatimQueue.js";
 import {
+  NOMINATIM_ACCEPT_LANGUAGE,
   forwardGeocode,
   reverseGeocode,
   searchPlacesForEnrichment
@@ -650,13 +651,15 @@ export async function search(req, res) {
   }
 
   const query = parsed.data.query;
-  const cacheKey = normalizeQuery(query);
+  const normalizedQuery = normalizeQuery(query);
 
-  if (cacheKey.length < 3) {
+  if (normalizedQuery.length < 3) {
     throw new HttpError(400, "Validation failed", {
       query: "Query must contain at least 3 alphanumeric characters"
     });
   }
+
+  const cacheKey = `${NOMINATIM_ACCEPT_LANGUAGE}:${normalizedQuery}`;
 
   const prisma = getPrisma();
   const cutoff = cutoffDate();
@@ -735,7 +738,7 @@ export async function reverse(req, res) {
   lat = fixNegZero(lat);
   lng = fixNegZero(lng);
 
-  const key = `${lat.toFixed(3)},${lng.toFixed(3)}`;
+  const key = `${NOMINATIM_ACCEPT_LANGUAGE}:${lat.toFixed(3)},${lng.toFixed(3)}`;
 
   const prisma = getPrisma();
   const cutoff = cutoffDate();
