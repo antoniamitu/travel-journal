@@ -167,9 +167,24 @@ export function decidePhotoLocationVerification({ eligibility, detection } = {})
   }
 
   if (distanceMeters >= ENV.LANDMARK_MISMATCH_MIN_DISTANCE_METERS) {
-  if (confidence >= ENV.PHOTO_LOCATION_MISMATCH_MIN_SCORE) {
+    if (confidence >= ENV.PHOTO_LOCATION_MISMATCH_MIN_SCORE) {
+      return {
+        status: "mismatch",
+        confidence,
+        distanceMeters,
+        detectedName,
+        reasons: uniqueStrings([
+          ...reasons,
+          "landmark_detected",
+          "distance_above_mismatch_threshold",
+          "score_meets_mismatch_threshold"
+        ]),
+        provider
+      };
+    }
+
     return {
-      status: "mismatch",
+      status: "uncertain",
       confidence,
       distanceMeters,
       detectedName,
@@ -177,26 +192,11 @@ export function decidePhotoLocationVerification({ eligibility, detection } = {})
         ...reasons,
         "landmark_detected",
         "distance_above_mismatch_threshold",
-        "score_meets_mismatch_threshold"
+        "score_below_mismatch_threshold"
       ]),
       provider
     };
   }
-
-  return {
-    status: "uncertain",
-    confidence,
-    distanceMeters,
-    detectedName,
-    reasons: uniqueStrings([
-      ...reasons,
-      "landmark_detected",
-      "distance_above_mismatch_threshold",
-      "score_below_mismatch_threshold"
-    ]),
-    provider
-  };
-}
 
   return {
     status: "uncertain",

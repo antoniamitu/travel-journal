@@ -113,6 +113,7 @@ function normalizeCandidate(candidate) {
 
   if (!normalized.name) return null;
   if (!Number.isFinite(normalized.score)) return null;
+  if (normalized.score < 0 || normalized.score > 1) return null;
   if (normalized.score < ENV.PHOTO_LOCATION_SUGGESTION_MIN_SCORE) return null;
   if (!hasValidLatLng(normalized.lat, normalized.lng)) return null;
 

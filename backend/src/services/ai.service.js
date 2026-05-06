@@ -13,6 +13,8 @@ const AI_RETRY_ATTEMPTS = ENV.AI_RETRY_ATTEMPTS;
 const AI_RETRY_BASE_DELAY_MS = ENV.AI_RETRY_BASE_DELAY_MS;
 const CLEANUP_INTERVAL_MS = 60_000;
 
+const COMBINING_MARKS_RE = /[\u0300-\u036f]/g;
+
 let lastCleanupAtMs = 0;
 
 /**
@@ -38,18 +40,31 @@ function sanitizeText(value, maxLength) {
     .trim();
 }
 
-function normalizeKeySegment(value) {
-  return sanitizeText(value, 100).replace(/[_ ,]/g, "");
+function fixedCoordKeyPart(value, decimals = 3) {
+  const n = Number(value);
+  const fixed = fixNegZero(Number.isFinite(n) ? n : 0).toFixed(decimals);
+
+  return Number(fixed) === 0 ? Number(0).toFixed(decimals) : fixed;
 }
 
-function buildLocationKey(latitude, longitude, city, country) {
-  const lat = fixNegZero(latitude).toFixed(3);
-  const lng = fixNegZero(longitude).toFixed(3);
+function normalizeKeySegment(value) {
+  return sanitizeText(value, 100)
+    .normalize("NFKD")
+    .replace(COMBINING_MARKS_RE, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+    .trim();
+}
 
+function buildLocationKey(latitude, longitude, locationName, city, country) {
+  const lat = fixedCoordKeyPart(latitude, 3);
+  const lng = fixedCoordKeyPart(longitude, 3);
+
+  const locationPart = normalizeKeySegment(locationName);
   const cityPart = normalizeKeySegment(city);
   const countryPart = normalizeKeySegment(country);
 
-  return `${lat},${lng}_${cityPart}_${countryPart}`;
+  return `${lat},${lng}_${locationPart}_${cityPart}_${countryPart}`;
 }
 
 function buildPrompt({ locationName, city, country }) {
@@ -273,7 +288,13 @@ export async function getLearnMoreContent(prisma, input) {
   const latitude = fixNegZero(input.latitude);
   const longitude = fixNegZero(input.longitude);
 
-  const locationKey = buildLocationKey(latitude, longitude, input.city, input.country);
+  const locationKey = buildLocationKey(
+    latitude,
+    longitude,
+    input.locationName,
+    input.city,
+    input.country
+  );
   const cutoff = getCacheCutoffDate();
 
   await cleanupExpiredAiCache(prisma, cutoff);

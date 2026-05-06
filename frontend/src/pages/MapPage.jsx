@@ -1,6 +1,5 @@
 // frontend/src/pages/MapPage.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import { Link } from "react-router-dom";
 import {
@@ -21,6 +20,7 @@ import { getPostById } from "../api/posts.js";
 import { useDebouncedValue } from "../hooks/useDebouncedValue.js";
 import { useLocationContext } from "../hooks/useLocationContext.js";
 import { formatSentimentScore, getSentimentUi } from "../utils/sentimentUi.js";
+import Lightbox from "../components/ui/Lightbox.jsx";
 
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
@@ -46,7 +46,7 @@ const TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
-const LIGHTBOX_SWIPE_THRESHOLD_PX = 56;
+
 const MAP_FETCH_DEBOUNCE_MS = 500;
 const WORLD_LNG_EPSILON = 1e-6;
 const INITIAL_CENTER = [45.9432, 24.9668];
@@ -222,9 +222,6 @@ function getPanelThumbSizes(imageCount = 1) {
   return "(max-width: 767px) 30vw, 96px";
 }
 
-function getLightboxSizes() {
-  return "100vw";
-}
 
 function buildAiPayload(post, details) {
   const locationName = String(details?.locationName || post?.locationName || "").trim();
@@ -372,188 +369,6 @@ function createClusterIcon(cluster) {
   });
 }
 
-function Lightbox({ images, currentIndex, onClose, onPrev, onNext, title }) {
-  const dialogRef = useRef(null);
-  const touchStartXRef = useRef(null);
-  const touchDeltaXRef = useRef(0);
-
-  const onCloseRef = useRef(onClose);
-  const onPrevRef = useRef(onPrev);
-  const onNextRef = useRef(onNext);
-
-  useEffect(() => {
-      onCloseRef.current = onClose;
-      onPrevRef.current = onPrev;
-      onNextRef.current = onNext;
-    }, [onClose, onPrev, onNext]);
-
-    const activeImage =
-  currentIndex >= 0 && Array.isArray(images) ? images[currentIndex] : null;
-
-const isLightboxOpen = Boolean(activeImage);
-
-useEffect(() => {
-  if (!isLightboxOpen) return undefined;
-
-  const previousOverflow = document.body.style.overflow;
-  const previousPaddingRight = document.body.style.paddingRight;
-
-  const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-  const currentPaddingRight =
-    Number.parseFloat(window.getComputedStyle(document.body).paddingRight) || 0;
-
-  document.body.style.overflow = "hidden";
-
-  if (scrollbarWidth > 0) {
-    document.body.style.paddingRight = `${currentPaddingRight + scrollbarWidth}px`;
-  }
-
-  const onKeyDown = (e) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      onCloseRef.current?.();
-      return;
-    }
-
-    if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      onPrevRef.current?.();
-      return;
-    }
-
-    if (e.key === "ArrowRight") {
-      e.preventDefault();
-      onNextRef.current?.();
-    }
-  };
-
-  document.addEventListener("keydown", onKeyDown);
-
-  const focusFrame = window.requestAnimationFrame(() => {
-    dialogRef.current?.focus();
-  });
-
-  return () => {
-    window.cancelAnimationFrame(focusFrame);
-    document.body.style.overflow = previousOverflow;
-    document.body.style.paddingRight = previousPaddingRight;
-    document.removeEventListener("keydown", onKeyDown);
-  };
-}, [isLightboxOpen]);
-
-  if (!activeImage) return null;
-  if (typeof document === "undefined") return null;
-
-  const image = activeImage;
-  const alt = title ? `${title} image ${currentIndex + 1}` : `Post image ${currentIndex + 1}`;
-  const srcSet = buildCloudinarySrcSet(image.secureUrl, {
-    widths: [640, 960, 1280, 1600, 2000],
-    crop: "limit"
-  });
-
-  function handleTouchStart(e) {
-    const touch = e.touches?.[0];
-    if (!touch) return;
-    touchStartXRef.current = touch.clientX;
-    touchDeltaXRef.current = 0;
-  }
-
-  function handleTouchMove(e) {
-    const touch = e.touches?.[0];
-    if (!touch || touchStartXRef.current == null) return;
-    touchDeltaXRef.current = touch.clientX - touchStartXRef.current;
-  }
-
-  function handleTouchEnd() {
-    const deltaX = touchDeltaXRef.current;
-    touchStartXRef.current = null;
-    touchDeltaXRef.current = 0;
-
-    if (Math.abs(deltaX) < LIGHTBOX_SWIPE_THRESHOLD_PX) {
-      return;
-    }
-
-    if (deltaX > 0) {
-      onPrev?.();
-    } else {
-      onNext?.();
-    }
-  }
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 px-3 py-4 sm:px-4 sm:py-6"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose?.();
-      }}
-    >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Image viewer"
-        tabIndex={-1}
-        className="relative flex max-h-full w-full max-w-6xl flex-col outline-none"
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close image viewer"
-          className="absolute right-0 top-0 z-10 inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
-        >
-          ✕
-        </button>
-
-        <div
-          className="mx-auto flex max-h-[85vh] w-full items-center justify-center overflow-auto rounded-2xl"
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          style={{ touchAction: "pan-y pinch-zoom" }}
-        >
-          <img
-            src={optimizeCloudinaryUrl(image.secureUrl, "full")}
-            srcSet={srcSet}
-            sizes={getLightboxSizes()}
-            alt={alt}
-            loading="eager"
-            fetchPriority="high"
-            decoding="async"
-            draggable={false}
-            className="max-h-[85vh] max-w-full rounded-2xl object-contain select-none"
-          />
-        </div>
-
-        {images.length > 1 && (
-          <>
-            <button
-              type="button"
-              onClick={onPrev}
-              aria-label="Previous image"
-              className="absolute left-0 top-1/2 inline-flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 px-3 py-3 text-white transition hover:bg-white/20"
-            >
-              ←
-            </button>
-
-            <button
-              type="button"
-              onClick={onNext}
-              aria-label="Next image"
-              className="absolute right-0 top-1/2 inline-flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 px-3 py-3 text-white transition hover:bg-white/20"
-            >
-              →
-            </button>
-          </>
-        )}
-
-        <div className="mt-4 text-center text-sm text-white/80">
-          {currentIndex + 1} / {images.length}
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
 
 function ImageStrip({ title, previewImage, images, lightboxOpenAt, detailsLoading }) {
   const normalizedImages = Array.isArray(images) ? images.filter((img) => img?.secureUrl) : [];
@@ -1075,14 +890,13 @@ export default function MapPage() {
 
   useEffect(() => {
     function onKeyDown(e) {
-      if (e.key === "Escape") {
-        if (lightboxIndex >= 0) {
-          setLightboxIndex(-1);
-          return;
-        }
+      if (e.key !== "Escape") return;
 
-        setSelectedPost(null);
+      if (lightboxIndex >= 0) {
+        return;
       }
+
+      setSelectedPost(null);
     }
 
     document.addEventListener("keydown", onKeyDown);
@@ -1722,6 +1536,7 @@ export default function MapPage() {
         images={lightboxImages}
         currentIndex={lightboxIndex}
         title={selectedPost?.title}
+        getImageUrl={(url) => optimizeCloudinaryUrl(url, "full")}
         onClose={() => setLightboxIndex(-1)}
         onPrev={() => {
           if (!lightboxImages.length) return;

@@ -452,18 +452,6 @@ export async function verifyPhotoLocationForPost(input = {}, { logContext = {} }
       reasons: result.reasons
     });
 
-    debugLog("result", {
-      ...logContext,
-      selectedLocationName: selectedLocation.locationName,
-      selectedImageUrl: primaryImageUrl,
-      visionImageUrl: detection?.imageUrlUsed ?? primaryImageUrl,
-      detectedName: result.detectedName,
-      confidence: result.confidence,
-      distanceMeters: result.distanceMeters,
-      status: result.status,
-      reasons: result.reasons
-    });
-
     if (result.status === "mismatch") {
       console.warn("Photo-location verification mismatch detected", {
         ...logContext,

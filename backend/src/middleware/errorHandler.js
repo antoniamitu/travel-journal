@@ -17,7 +17,6 @@ export function errorHandler(err, req, res, next) {
 
   // Controlled HttpError
   if (Number.isFinite(statusCode) && statusCode >= 400 && statusCode < 600) {
-    // ✅ safe, user-facing geocoding errors
     const safe5xx = new Set([502, 503, 504]);
 
     if (statusCode >= 500 && !safe5xx.has(statusCode)) {
@@ -25,7 +24,16 @@ export function errorHandler(err, req, res, next) {
       return res.status(statusCode).json({ message: "Internal server error" });
     }
 
-    const payload = { message: err?.message || "Request failed" };
+    const extraPayload =
+      err?.payload && typeof err.payload === "object" && !Array.isArray(err.payload)
+        ? err.payload
+        : {};
+
+    const payload = {
+      ...extraPayload,
+      message: err?.message || "Request failed"
+    };
+
     if (err?.errors && typeof err.errors === "object" && !Array.isArray(err.errors)) {
       payload.errors = err.errors;
     }

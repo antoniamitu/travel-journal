@@ -28,7 +28,6 @@ import { canEnqueue, nominatimQueue } from "../services/nominatimQueue.js";
 import analyzeSentiment from "../utils/analyzeSentiment.js";
 import { SENTIMENT_VALUES } from "../constants/sentiment.js";
 import {
-  buildLocationSearchKeys,
   normalizeCityForStorage,
   normalizeCountryForStorage,
   normalizeLocationCompareKey,
@@ -213,41 +212,91 @@ function uniqueStrings(values) {
   return out;
 }
 
+function normalizeSearchKeyForSql(rawKey) {
+  const normalized = normalizeLocationSearchKey(rawKey, { applyAliases: false });
+  return String(normalized || rawKey || "").replace(/[^a-z0-9]/g, "");
+}
+
+function buildNormalizedCompactSql(fieldSql) {
+  return Prisma.sql`
+    regexp_replace(unaccent(lower(COALESCE(${fieldSql}, ''))), '[^a-z0-9]+', '', 'g')
+  `;
+}
+
+function buildNormalizedTokenSql(fieldSql) {
+  return Prisma.sql`
+    btrim(regexp_replace(unaccent(lower(COALESCE(${fieldSql}, ''))), '[^a-z0-9]+', ' ', 'g'))
+  `;
+}
+
+function buildLocationFieldCondition(fieldSql, rawKey) {
+  const key = normalizeSearchKeyForSql(rawKey);
+
+  if (key.length < 3) {
+    return null;
+  }
+
+  const tokenSql = buildNormalizedTokenSql(fieldSql);
+  const compactSql = buildNormalizedCompactSql(fieldSql);
+
+  // For 3 typed characters, allow prefix matching so suggestions can still appear while typing.
+  if (key.length === 3) {
+    return Prisma.sql`
+      (
+        ${tokenSql} ~ ${`(^| )${key}[a-z0-9]*( |$)`}
+        OR ${compactSql} LIKE ${`${key}%`}
+      )
+    `;
+  }
+
+  // For short complete names like "roma", "iasi", "oslo", use exact token matching.
+  // This prevents "roma" from matching "romania".
+  if (key.length === 4) {
+    return Prisma.sql`
+      (
+        ${tokenSql} ~ ${`(^| )${key}( |$)`}
+        OR ${compactSql} = ${key}
+      )
+    `;
+  }
+
+  return Prisma.sql`
+    (
+      ${tokenSql} ~ ${`(^| )${key}[a-z0-9]*( |$)`}
+      OR ${compactSql} LIKE ${`%${key}%`}
+    )
+  `;
+}
+
 function buildFeedLocationSearchSql(searchKeys) {
-  const keys = uniqueStrings(searchKeys || []).filter((key) => key.length >= 3);
+  const keys = uniqueStrings(searchKeys || [])
+    .map(normalizeSearchKeyForSql)
+    .filter((key) => key.length >= 3);
+
   if (keys.length === 0) {
     return Prisma.empty;
   }
 
+  const fields = [
+    Prisma.sql`p.location_name`,
+    Prisma.sql`p.city`,
+    Prisma.sql`p.country`,
+    Prisma.sql`concat_ws(' ', COALESCE(p.location_name, ''), COALESCE(p.city, ''), COALESCE(p.country, ''))`
+  ];
+
   const clauses = [];
 
   for (const key of keys) {
-    const pattern = `%${key}%`;
+    for (const field of fields) {
+      const condition = buildLocationFieldCondition(field, key);
+      if (condition) {
+        clauses.push(condition);
+      }
+    }
+  }
 
-    clauses.push(Prisma.sql`
-      regexp_replace(unaccent(lower(COALESCE(p.location_name, ''))), '[^a-z0-9]+', '', 'g') LIKE ${pattern}
-    `);
-
-    clauses.push(Prisma.sql`
-      regexp_replace(unaccent(lower(COALESCE(p.city, ''))), '[^a-z0-9]+', '', 'g') LIKE ${pattern}
-    `);
-
-    clauses.push(Prisma.sql`
-      regexp_replace(unaccent(lower(COALESCE(p.country, ''))), '[^a-z0-9]+', '', 'g') LIKE ${pattern}
-    `);
-
-    clauses.push(Prisma.sql`
-      regexp_replace(
-        unaccent(
-          lower(
-            concat_ws(' ', COALESCE(p.location_name, ''), COALESCE(p.city, ''), COALESCE(p.country, ''))
-          )
-        ),
-        '[^a-z0-9]+',
-        '',
-        'g'
-      ) LIKE ${pattern}
-    `);
+  if (clauses.length === 0) {
+    return Prisma.empty;
   }
 
   return Prisma.sql`
@@ -256,16 +305,21 @@ function buildFeedLocationSearchSql(searchKeys) {
 }
 
 function buildSuggestionLocationSearchSql(searchKeys) {
-  const keys = uniqueStrings(searchKeys || []).filter((key) => key.length >= 3);
+  const keys = uniqueStrings(searchKeys || [])
+    .map(normalizeSearchKeyForSql)
+    .filter((key) => key.length >= 3);
+
   if (keys.length === 0) {
     return Prisma.sql`WHERE FALSE`;
   }
 
-  const clauses = keys.map((key) => {
-    return Prisma.sql`
-      regexp_replace(unaccent(lower(COALESCE(query_value, ''))), '[^a-z0-9]+', '', 'g') LIKE ${`${key}%`}
-    `;
-  });
+  const clauses = keys
+    .map((key) => buildLocationFieldCondition(Prisma.sql`query_value`, key))
+    .filter(Boolean);
+
+  if (clauses.length === 0) {
+    return Prisma.sql`WHERE FALSE`;
+  }
 
   return Prisma.sql`
     WHERE (${Prisma.join(clauses, " OR ")})
@@ -404,19 +458,16 @@ function parseFeedListQuery(query) {
     }
   }
 
-  if (query?.q != null) {
-    const rawQ = String(query.q).trim();
+    if (query?.q != null) {
+      const rawQ = String(query.q).trim();
 
-    if (rawQ.length > MAX_FEED_QUERY_LENGTH) {
-      errors.q = `q must be at most ${MAX_FEED_QUERY_LENGTH} characters`;
-    } else if (rawQ !== "") {
-      qSearchKeys = buildLocationSearchKeys(rawQ);
-
-      if (qSearchKeys.length === 0) {
-        qSearchKeys = [];
+      if (rawQ.length > MAX_FEED_QUERY_LENGTH) {
+        errors.q = `q must be at most ${MAX_FEED_QUERY_LENGTH} characters`;
+      } else if (rawQ !== "") {
+        const normalizedRawQ = normalizeSearchKeyForSql(rawQ);
+        qSearchKeys = normalizedRawQ.length >= 3 ? [normalizedRawQ] : [];
       }
     }
-  }
 
   if (query?.sentiment != null && String(query.sentiment).trim() !== "") {
     const rawSentiment = String(query.sentiment).trim().toLowerCase();
@@ -482,7 +533,8 @@ function parseLocationSuggestQuery(query) {
     }
   }
 
-  qSearchKeys = buildLocationSearchKeys(q);
+  const normalizedRawQ = normalizeSearchKeyForSql(q);
+  qSearchKeys = normalizedRawQ.length >= 3 ? [normalizedRawQ] : [];
 
   if (Object.keys(errors).length > 0) {
     throw new HttpError(400, "Validation failed", errors);
@@ -632,34 +684,47 @@ function buildTextLocationConsistencyInput({ title, content }, selectedLocation)
   };
 }
 
-function sendPhotoLocationMismatch(res, result) {
-  return res.status(422).json({
-    ok: false,
-    code: "PHOTO_LOCATION_MISMATCH",
-    message: "The photo seems to correspond to a different location than the one selected.",
-    verification: {
-      status: "mismatch",
-      detectedLandmark: result.detectedName,
-      confidence: result.confidence,
-      distanceMeters: result.distanceMeters,
-      reasons: Array.isArray(result.reasons) ? result.reasons : []
+function throwPhotoLocationMismatch(result) {
+  throw new HttpError(
+    422,
+    "The photo seems to correspond to a different location than the one selected.",
+    {
+      locationName: "The selected location doesn't seem to match the uploaded photo."
+    },
+    {
+      ok: false,
+      code: "PHOTO_LOCATION_MISMATCH",
+      verification: {
+        status: "mismatch",
+        detectedName: result?.detectedName || null,
+        detectedLandmark: result?.detectedName || null,
+        confidence: result?.confidence ?? null,
+        distanceMeters: result?.distanceMeters ?? null,
+        reasons: Array.isArray(result?.reasons) ? result.reasons : []
+      }
     }
-  });
+  );
 }
 
-function sendTextLocationMismatch(res, result) {
-  return res.status(422).json({
-    ok: false,
-    code: "TEXT_LOCATION_MISMATCH",
-    message: "Your title or description seems to describe a different location than the one selected.",
-    consistency: {
-      mentionedLocation: result.mentionedLocation,
-      selectedLocation: result.selectedLocation,
-      confidence: result.confidence,
-      distanceMeters: result.distanceMeters,
-      reason: result.reason
+function throwTextLocationMismatch(result) {
+  throw new HttpError(
+    422,
+    "Your title or description seems to describe a different location than the one selected.",
+    {
+      locationName: "The selected location doesn't seem to match your title or description."
+    },
+    {
+      ok: false,
+      code: "TEXT_LOCATION_MISMATCH",
+      consistency: {
+        mentionedLocation: result?.mentionedLocation || null,
+        selectedLocation: result?.selectedLocation || null,
+        confidence: result?.confidence ?? null,
+        distanceMeters: result?.distanceMeters ?? null,
+        reason: result?.reason || null
+      }
     }
-  });
+  );
 }
 
 async function resolvePlaceClassification(input, { logContext = {} } = {}) {
@@ -923,7 +988,7 @@ export async function create(req, res) {
   // The user may want to correct the selected location and retry with the same
   // already-uploaded images. Draft/orphan cleanup is handled elsewhere.
   if (photoVerification.status === "mismatch") {
-    return sendPhotoLocationMismatch(res, photoVerification);
+    throwPhotoLocationMismatch(photoVerification);
   }
 
   const textLocationConsistency = await checkTextLocationConsistencyForPost(
@@ -946,7 +1011,7 @@ export async function create(req, res) {
   // The user may want to correct the text or selected location and retry with
   // the same already-uploaded images.
   if (!textLocationConsistency.ok) {
-    return sendTextLocationMismatch(res, textLocationConsistency);
+    throwTextLocationMismatch(textLocationConsistency);
   }
 
   let classification = await resolvePlaceClassification(
@@ -1293,7 +1358,7 @@ export async function update(req, res) {
   // The user may want to correct the selected location and retry with the same
   // already-uploaded images. Draft/orphan cleanup is handled elsewhere.
   if (photoVerification.status === "mismatch") {
-    return sendPhotoLocationMismatch(res, photoVerification);
+    throwPhotoLocationMismatch(photoVerification);
   }
 
   const textLocationConsistency = await checkTextLocationConsistencyForPost(
@@ -1317,8 +1382,8 @@ export async function update(req, res) {
   // The user may want to correct the text or selected location and retry with
   // the same already-uploaded images.
   if (!textLocationConsistency.ok) {
-    return sendTextLocationMismatch(res, textLocationConsistency);
-  }
+  throwTextLocationMismatch(textLocationConsistency);
+}
 
   const reusableStoredPlaceCategory = sameLocation
     ? getReusableStoredPlaceCategory(existingPost.place_category)

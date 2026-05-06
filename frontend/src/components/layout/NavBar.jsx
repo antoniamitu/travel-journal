@@ -487,6 +487,7 @@ export default function NavBar() {
 
       resetSuggestionState();
       closeSearchDropdown();
+      setIsSuggestLoading(false);
 
       if (submitAbortRef.current) {
         submitAbortRef.current.abort();
@@ -586,6 +587,7 @@ export default function NavBar() {
 
       resetSuggestionState();
       closeSearchDropdown();
+      setIsSuggestLoading(false);
       setGlobalSearch(searchText);
       await handleSubmitSearch(searchText);
     },
@@ -609,6 +611,7 @@ export default function NavBar() {
       }
 
       setIsSearchSubmitPending(false);
+      setIsSuggestLoading(false);
 
       clearSelectedPlace();
       setGlobalSearch("");

@@ -755,6 +755,22 @@ export async function reverse(req, res) {
 
   if (cached) {
     const mapped = mapNominatimReverseResult(cached.results_json, lat, lng);
+
+    const mayNeedExternalRefinement =
+      mapped &&
+      isGenericReverseResult(mapped) &&
+      buildRefinementQueries(mapped).length > 0 &&
+      canEnqueue();
+
+    if (mayNeedExternalRefinement) {
+      const limit = checkGeocodeLimit(req.userId, req.ip);
+
+      if (!limit.ok) {
+        setRetryAfterHeader(res, limit.retryAfterMs);
+        throw new HttpError(429, "Too many geocoding requests, please slow down");
+      }
+    }
+
     const { result, refinementMeta } = await refineReverseResultIfNeeded(mapped, {
       action: "reverse",
       source: "cache",

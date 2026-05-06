@@ -6,6 +6,7 @@ import { buildSignedUploadPayload, cleanupUploads, getUploadFolderForUser } from
 import { checkUploadsLimit } from "../utils/uploadsRateLimit.js";
 import { setRetryAfterHeader } from "../utils/slidingWindowRateLimiter.js";
 import { ENV } from "../config/env.js";
+import { getPrisma } from "../config/prisma.js";
 
 function devMeta(obj) {
   return ENV.NODE_ENV === "development" ? obj : {};
@@ -49,22 +50,60 @@ export async function cleanup(req, res) {
     throw new HttpError(400, "Validation failed", formatZodErrors(parsed.error));
   }
 
-  // Per-user folder: expectedPrefix is travel-journal/u_<userId>/
   const prefix = getUploadFolderForUser(userId) + "/";
   const invalid = parsed.data.publicIds.filter((id) => !id.startsWith(prefix));
+
   if (invalid.length > 0) {
     throw new HttpError(400, "Validation failed", {
       publicIds: `All publicIds must start with "${prefix}"`
     });
   }
 
-  // Draft cleanup path keeps CDN invalidation off by default.
-  const result = await cleanupUploads(userId, parsed.data.publicIds);
+  const prisma = getPrisma();
+
+  let attachedRows;
+  try {
+    attachedRows = await prisma.postImage.findMany({
+      where: {
+        public_id: {
+          in: parsed.data.publicIds
+        }
+      },
+      select: {
+        public_id: true
+      }
+    });
+  } catch (err) {
+    console.warn("Skipped upload cleanup because DB attachment state could not be verified", {
+      userId,
+      publicIds: parsed.data.publicIds,
+      error: err?.message || String(err)
+    });
+
+    throw new HttpError(503, "Upload cleanup temporarily unavailable. Please try again shortly.");
+  }
+
+  const attachedSet = new Set(attachedRows.map((row) => row.public_id));
+  const skippedAttached = parsed.data.publicIds.filter((id) => attachedSet.has(id));
+  const unattachedPublicIds = parsed.data.publicIds.filter((id) => !attachedSet.has(id));
+
+  if (unattachedPublicIds.length === 0) {
+    return res.status(200).json({
+      ok: true,
+      deleted: [],
+      failed: [],
+      skippedAttached,
+      ...devMeta({ expectedPrefix: prefix })
+    });
+  }
+
+  const result = await cleanupUploads(userId, unattachedPublicIds);
 
   return res.status(200).json({
     ok: true,
     deleted: result.deleted,
     failed: result.failed,
+    skippedAttached,
     ...devMeta({ expectedPrefix: result.expectedPrefix })
   });
 }

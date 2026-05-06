@@ -2148,6 +2148,7 @@ const nonLocationControlsDisabled = isSubmitting;
                   }}
                   onSelectPlace={(place) => {
                     manualLocationSelectedRef.current = true;
+                    markPhotoSuggestionAsNotApplied();
                     applyPlaceToForm(place);
                     setReverseStatus("");
                   }}

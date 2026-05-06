@@ -173,6 +173,12 @@ const envSchema = z
       .max(1, "VISION_STRONG_SCORE must be between 0 and 1")
       .default(0.88),
 
+    // Photo-location verification distance policy:
+    // - distance <= LANDMARK_MATCH_MAX_DISTANCE_METERS can become "match"
+    // - distance >= LANDMARK_MISMATCH_MIN_DISTANCE_METERS can become "mismatch",
+    //   but only when confidence also satisfies PHOTO_LOCATION_MISMATCH_MIN_SCORE
+    // - distances between the two thresholds intentionally remain an "uncertain" gray zone
+
     LANDMARK_MATCH_MAX_DISTANCE_METERS: z.coerce
       .number()
       .int("LANDMARK_MATCH_MAX_DISTANCE_METERS must be an integer")

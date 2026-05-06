@@ -17,6 +17,7 @@ import {
 } from "recharts";
 import { getMyDashboard } from "../api/dashboard.js";
 import { getPlaceCategoryUi } from "../utils/placeCategoryUi.js";
+import { formatFullDate, formatMemberSince } from "../utils/dateFormat.js";
 
 const SENTIMENT_META = {
   positive: {
@@ -51,28 +52,6 @@ function asSafeNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function formatMemberSince(value) {
-  if (!value) return "Member since —";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Member since —";
-
-  return `Member since ${new Intl.DateTimeFormat("en-GB", {
-    month: "long",
-    year: "numeric"
-  }).format(date)}`;
-}
-
-function formatFullDate(value) {
-  if (!value) return "—";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium"
-  }).format(date);
-}
 
 function getDominantItem(items, labelKey = "label") {
   const safeItems = Array.isArray(items) ? items : [];

@@ -110,6 +110,14 @@ export async function getPostsInBounds(req, res) {
   return res.status(200).json({
     ok: true,
     posts,
-    countInBounds: posts.length
+    returnedCount: posts.length,
+
+    // Backward-compatible alias for existing frontend code.
+    // Semantically, this is the returned count, not the full DB count in bounds,
+    // because the endpoint applies MAX_MAP_POSTS as a safety limit.
+    countInBounds: posts.length,
+
+    limit: MAX_MAP_POSTS,
+    truncated: posts.length === MAX_MAP_POSTS
   });
 }

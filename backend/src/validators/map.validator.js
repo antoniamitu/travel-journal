@@ -18,14 +18,13 @@ export const mapPostsQuerySchema = z
       });
     }
 
-    // MVP rule from PRD:
-    // anti-meridian crossing is NOT supported yet.
+    // Dateline-crossing bounds are not supported by the current API contract.
     if (data.eastLng < data.westLng) {
       ctx.addIssue({
         code: "custom",
         path: ["eastLng"],
         message:
-          "eastLng must be greater than or equal to westLng (anti-meridian crossing not supported in MVP)"
+          "eastLng must be greater than or equal to westLng"
       });
     }
   });

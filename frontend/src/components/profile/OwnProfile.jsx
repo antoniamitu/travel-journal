@@ -5,6 +5,13 @@ import { formatSentimentScore, getSentimentUi } from "../../utils/sentimentUi.js
 import { getPlaceCategoryUi } from "../../utils/placeCategoryUi.js";
 import { makeCloudinaryOptimizer } from "../../utils/cloudinaryImage.js";
 import ProfilePostsMap from "./ProfilePostsMap.jsx";
+import { formatMemberSince, formatPostDate } from "../../utils/dateFormat.js";
+import {
+  getAvatarInitials,
+  getPostLocation,
+  getPreviewImage,
+  hasValidPostCoordinates
+} from "../../utils/postDisplay.js";
 
 const EMPTY_STATS = {
   totalPosts: 0,
@@ -48,29 +55,6 @@ function normalizeProfileStats(stats) {
   };
 }
 
-function formatMemberSince(value) {
-  if (!value) return "Member since —";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Member since —";
-
-  return `Member since ${new Intl.DateTimeFormat("en-GB", {
-    month: "long",
-    year: "numeric"
-  }).format(date)}`;
-}
-
-function formatPostDate(value) {
-  if (!value) return "—";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium"
-  }).format(date);
-}
-
 const optimizeCloudinaryUrl = makeCloudinaryOptimizer(
   {
     thumb: "c_fill,w_900,h_620,g_auto,f_auto,q_auto",
@@ -79,43 +63,6 @@ const optimizeCloudinaryUrl = makeCloudinaryOptimizer(
   "card"
 );
 
-function getAvatarInitials(user) {
-  const source = String(user?.username || user?.email || "U").trim();
-  if (!source) return "U";
-
-  const parts = source.replace(/[@._-]+/g, " ").split(/\s+/).filter(Boolean);
-
-  if (parts.length >= 2) {
-    return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
-  }
-
-  return source.slice(0, 2).toUpperCase();
-}
-
-function getPreviewImage(post) {
-  if (Array.isArray(post?.previewImages) && post.previewImages.length > 0) {
-    const first = post.previewImages.find((item) => typeof item === "string" && item.trim() !== "");
-    if (first) return first;
-  }
-
-  if (typeof post?.previewImage === "string" && post.previewImage.trim()) {
-    return post.previewImage;
-  }
-
-  return "";
-}
-
-function getPostLocation(post) {
-  const parts = [post?.city, post?.country].filter(
-    (item) => typeof item === "string" && item.trim() !== ""
-  );
-
-  if (parts.length > 0) {
-    return parts.join(", ");
-  }
-
-  return post?.locationName || "Unknown location";
-}
 
 function ProfileLocationIcon({ className = "h-5 w-5" }) {
   return (
@@ -135,19 +82,6 @@ function ProfileLocationIcon({ className = "h-5 w-5" }) {
   );
 }
 
-function hasValidPostCoordinates(post) {
-  const lat = Number(post?.latitude);
-  const lng = Number(post?.longitude);
-
-  return (
-    Number.isFinite(lat) &&
-    Number.isFinite(lng) &&
-    lat >= -90 &&
-    lat <= 90 &&
-    lng >= -180 &&
-    lng <= 180
-  );
-}
 
 function SettingsDropdown({ onDeleteRequest, deleteDisabled = false }) {
   const [open, setOpen] = useState(false);

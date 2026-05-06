@@ -10,13 +10,17 @@ export async function requestUploadSignature(options = {}) {
 export async function cleanupDraftUploads(publicIds, options = {}) {
   const ids = Array.isArray(publicIds) ? publicIds.filter(Boolean) : [];
   if (ids.length === 0) {
-    return { deleted: [], failed: [] };
+    return { deleted: [], failed: [], skippedAttached: [] };
   }
 
   const res = await api.post("/uploads/cleanup", { publicIds: ids }, options);
+
   return {
     deleted: Array.isArray(res?.data?.deleted) ? res.data.deleted : [],
-    failed: Array.isArray(res?.data?.failed) ? res.data.failed : []
+    failed: Array.isArray(res?.data?.failed) ? res.data.failed : [],
+    skippedAttached: Array.isArray(res?.data?.skippedAttached)
+      ? res.data.skippedAttached
+      : []
   };
 }
 

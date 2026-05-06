@@ -1,7 +1,7 @@
 // backend/src/validators/post.validator.js
 import { z } from "zod";
 import { PRIVACY_VALUES } from "../constants/privacy.js";
-import { asNumberOrUndefined } from "./shared.js";
+import { asNumberOrUndefined, publicIdSchema } from "./shared.js";
 import {
   normalizeLocationDisplayText,
   normalizeOptionalLocationText
@@ -17,19 +17,6 @@ function optionalTrimmedStringOrUndefined(val) {
   const trimmed = val.trim();
   return trimmed === "" ? undefined : trimmed;
 }
-
-// allow dots too, but still forbid traversal-like patterns
-const PUBLIC_ID_RE = /^[a-zA-Z0-9/_.-]+$/;
-
-const publicIdSchema = z
-  .string()
-  .trim()
-  .min(1, "publicId is required")
-  .max(200, "publicId too long")
-  .refine((v) => PUBLIC_ID_RE.test(v), "publicId has invalid characters")
-  .refine((v) => !v.includes(".."), "publicId must not contain '..'")
-  .refine((v) => !v.includes("\\"), "publicId must not contain backslashes")
-  .refine((v) => !v.includes("//"), "publicId must not contain '//'");
 
 const imageSchema = z.object({
   secureUrl: z.preprocess(
@@ -139,6 +126,8 @@ const postBodySchema = z
     }
   });
 
+// Create and update share the same schema because this API uses full-body PUT semantics:
+// the complete post payload is required for both operations.
 export const createPostSchema = postBodySchema;
 export const updatePostSchema = postBodySchema;
 

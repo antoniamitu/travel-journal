@@ -20,8 +20,14 @@ export const SENTIMENT_THRESHOLDS = Object.freeze({
 export const NEUTRAL_SENTIMENT_SCORE = 5;
 
 export function clampSentimentScore(score) {
+  if (score == null || score === "") {
+    return NEUTRAL_SENTIMENT_SCORE;
+  }
+
   const n = Number(score);
 
+  // Safe fallback: invalid/non-finite sentiment inputs become neutral,
+  // while normal validated scores remain on the 0-10 scale.
   if (!Number.isFinite(n)) {
     return NEUTRAL_SENTIMENT_SCORE;
   }

@@ -111,7 +111,7 @@ export function AuthProvider({ children }) {
   const login = useCallback(
     async ({ email, password }, options = {}) => {
       const payload = {
-        email: String(email || "").trim(),
+        email: String(email || "").trim().toLowerCase(),
         password: String(password || "")
       };
 
@@ -136,7 +136,7 @@ export function AuthProvider({ children }) {
   const register = useCallback(
     async ({ email, username, password }, options = {}) => {
       const payload = {
-        email: String(email || "").trim(),
+        email: String(email || "").trim().toLowerCase(),
         username: String(username || "").trim(),
         password: String(password || "")
       };

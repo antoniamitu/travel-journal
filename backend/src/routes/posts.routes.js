@@ -4,6 +4,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireJsonBody } from "../utils/requireJsonBody.js";
 import { postsReadLimiter } from "../middleware/postsReadLimiter.js";
+import { postsWriteLimiter } from "../middleware/postsWriteLimiter.js";
 import {
   create,
   getById,
@@ -30,10 +31,10 @@ router.get("/", requireAuth, postsReadLimiter, asyncHandler(listFeed));
 router.get("/locations/suggest", requireAuth, postsReadLimiter, asyncHandler(suggestLocations));
 
 // Step 2.1
-router.post("/", requireAuth, requireJsonBody, asyncHandler(create));
+router.post("/", requireAuth, requireJsonBody, postsWriteLimiter, asyncHandler(create));
 
 // Step 2.4
-router.put("/:id", requireAuth, requireJsonBody, asyncHandler(update));
+router.put("/:id", requireAuth, requireJsonBody, postsWriteLimiter, asyncHandler(update));
 
 // IMPORTANT:
 // Future static GET routes like "/locations/suggest" MUST be declared before "/:id"
@@ -43,6 +44,6 @@ router.put("/:id", requireAuth, requireJsonBody, asyncHandler(update));
 router.get("/:id", requireAuth, postsReadLimiter, asyncHandler(getById));
 
 // Step 2.3
-router.delete("/:id", requireAuth, asyncHandler(remove));
+router.delete("/:id", requireAuth, postsWriteLimiter, asyncHandler(remove));
 
 export default router;

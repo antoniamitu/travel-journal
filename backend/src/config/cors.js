@@ -32,7 +32,13 @@ export function corsMiddleware() {
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 
     allowedHeaders: ["Content-Type", "Authorization"],
-    exposedHeaders: ["Content-Length"],
+    exposedHeaders: [
+      "Content-Length",
+      "Retry-After",
+      "RateLimit-Limit",
+      "RateLimit-Remaining",
+      "RateLimit-Reset"
+    ],
 
     // Cache preflight for 24h
     maxAge: 86400,

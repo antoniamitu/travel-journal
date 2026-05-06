@@ -11,6 +11,8 @@ import {
   isKnownPlaceCategory,
   PLACE_CATEGORY_FILTER_OPTIONS
 } from "../utils/placeCategoryUi.js";
+import { formatDate, formatFeedPostDate } from "../utils/dateFormat.js";
+import { getAuthorInitials, hasValidCoordinatePair } from "../utils/postDisplay.js";
 
 const DEFAULT_PAGE_SIZE = 12;
 const AI_COOLDOWN_MS = 60_000;
@@ -30,56 +32,6 @@ const FEED_SENTIMENT_OPTIONS = [
 
 const FEED_CATEGORY_OPTIONS = PLACE_CATEGORY_FILTER_OPTIONS;
 
-function formatDate(value) {
-  if (!value) return "—";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium"
-  }).format(date);
-}
-
-function formatFeedPostDate(value) {
-  if (!value) return "—";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-
-  if (diffMs < 0) {
-    return formatDate(value);
-  }
-
-  const minuteMs = 60 * 1000;
-  const hourMs = 60 * minuteMs;
-  const dayMs = 24 * hourMs;
-
-  const diffMinutes = Math.floor(diffMs / minuteMs);
-  const diffHours = Math.floor(diffMs / hourMs);
-  const diffDays = Math.floor(diffMs / dayMs);
-
-  if (diffMinutes < 1) {
-    return "Just now";
-  }
-
-  if (diffMinutes < 60) {
-    return `${diffMinutes} minute${diffMinutes === 1 ? "" : "s"} ago`;
-  }
-
-  if (diffHours < 24) {
-    return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
-  }
-
-  if (diffDays <= 7) {
-    return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
-  }
-
-  return formatDate(value);
-}
 
 const optimizeCloudinaryUrl = makeCloudinaryOptimizer(
   {
@@ -89,8 +41,6 @@ const optimizeCloudinaryUrl = makeCloudinaryOptimizer(
   },
   "card"
 );
-
-
 
 
 function normalizePreviewImages(post) {
@@ -125,16 +75,6 @@ function buildAiPayload(post) {
   };
 }
 
-function hasValidCoordinatePair(lat, lng) {
-  return (
-    Number.isFinite(lat) &&
-    Number.isFinite(lng) &&
-    lat >= -90 &&
-    lat <= 90 &&
-    lng >= -180 &&
-    lng <= 180
-  );
-}
 
 function mergeUniquePosts(existing, incoming) {
   const map = new Map();
@@ -634,19 +574,6 @@ const FeedImageGallery = React.memo(function FeedImageGallery({
   );
 });
 
-function getFeedAuthorInitials(post) {
-  const source = String(post?.username || post?.email || "T").trim();
-
-  if (!source) return "T";
-
-  const parts = source.replace(/[@._-]+/g, " ").split(/\s+/).filter(Boolean);
-
-  if (parts.length >= 2) {
-    return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
-  }
-
-  return source.slice(0, 2).toUpperCase();
-}
 
 function FeedLocationIcon({ className = "h-5 w-5" }) {
   return (
@@ -719,7 +646,7 @@ const FeedPostCard = React.memo(function FeedPostCard({
   const placeCategoryUi = getPlaceCategoryUi(post.placeCategory);
   const username = String(post?.username || "Traveler").trim() || "Traveler";
   const profileUrl = post?.username ? `/users/${encodeURIComponent(post.username)}` : null;
-  const authorInitials = getFeedAuthorInitials(post);
+  const authorInitials = getAuthorInitials(post);
 
   const aiStatus = aiState?.status || "idle";
   const aiContent = aiState?.content || "";

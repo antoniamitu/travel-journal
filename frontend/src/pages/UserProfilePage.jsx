@@ -6,6 +6,12 @@ import { useAuth } from "../hooks/useAuth.js";
 import { formatSentimentScore, getSentimentUi } from "../utils/sentimentUi.js";
 import { getPlaceCategoryUi } from "../utils/placeCategoryUi.js";
 import { makeCloudinaryOptimizer } from "../utils/cloudinaryImage.js";
+import { formatMemberSince, formatPostDate } from "../utils/dateFormat.js";
+import {
+  getAvatarInitials,
+  getPostLocation,
+  getPreviewImage
+} from "../utils/postDisplay.js";
 
 const DEFAULT_PAGE_SIZE = 20;
 
@@ -19,28 +25,6 @@ const DEFAULT_PROFILE_STATS = {
   citiesVisited: 0
 };
 
-function formatMemberSince(value) {
-  if (!value) return "Member since —";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Member since —";
-
-  return `Member since ${new Intl.DateTimeFormat("en-GB", {
-    month: "long",
-    year: "numeric"
-  }).format(date)}`;
-}
-
-function formatPostDate(value) {
-  if (!value) return "—";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium"
-  }).format(date);
-}
 
 const optimizeCloudinaryUrl = makeCloudinaryOptimizer(
   {
@@ -50,42 +34,34 @@ const optimizeCloudinaryUrl = makeCloudinaryOptimizer(
   "card"
 );
 
-function getAvatarInitials(user) {
-  const source = String(user?.username || "U").trim();
-  if (!source) return "U";
-
-  const parts = source.replace(/[@._-]+/g, " ").split(/\s+/).filter(Boolean);
-
-  if (parts.length >= 2) {
-    return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
-  }
-
-  return source.slice(0, 2).toUpperCase();
+function asSafeNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
-function getPreviewImage(post) {
-  if (Array.isArray(post?.previewImages) && post.previewImages.length > 0) {
-    const first = post.previewImages.find((item) => typeof item === "string" && item.trim() !== "");
-    if (first) return first;
-  }
+function normalizeProfileStats(stats) {
+  const source = stats && typeof stats === "object" ? stats : {};
+  const sentimentCounts =
+    source.sentimentCounts && typeof source.sentimentCounts === "object"
+      ? source.sentimentCounts
+      : {};
 
-  if (typeof post?.previewImage === "string" && post.previewImage.trim()) {
-    return post.previewImage;
-  }
-
-  return "";
-}
-
-function getPostLocation(post) {
-  const parts = [post?.city, post?.country].filter(
-    (item) => typeof item === "string" && item.trim() !== ""
-  );
-
-  if (parts.length > 0) {
-    return parts.join(", ");
-  }
-
-  return post?.locationName || "Unknown location";
+  return {
+    totalPosts: asSafeNumber(source.totalPosts, DEFAULT_PROFILE_STATS.totalPosts),
+    publicPosts: asSafeNumber(source.publicPosts, DEFAULT_PROFILE_STATS.publicPosts),
+    privatePosts: asSafeNumber(source.privatePosts, DEFAULT_PROFILE_STATS.privatePosts),
+    averageSentimentScore:
+      source.averageSentimentScore == null
+        ? null
+        : asSafeNumber(source.averageSentimentScore, null),
+    sentimentCounts: {
+      positive: asSafeNumber(sentimentCounts.positive, 0),
+      neutral: asSafeNumber(sentimentCounts.neutral, 0),
+      negative: asSafeNumber(sentimentCounts.negative, 0)
+    },
+    countriesVisited: asSafeNumber(source.countriesVisited, DEFAULT_PROFILE_STATS.countriesVisited),
+    citiesVisited: asSafeNumber(source.citiesVisited, DEFAULT_PROFILE_STATS.citiesVisited)
+  };
 }
 
 function UserProfileLocationIcon({ className = "h-5 w-5" }) {
@@ -121,8 +97,23 @@ function mergeUniquePostsById(existing, incoming) {
     }
   }
 
-  return Array.from(map.values());
+  return Array.from(map.values()).sort((a, b) => {
+    const aTime = new Date(a?.createdAt || 0).getTime();
+    const bTime = new Date(b?.createdAt || 0).getTime();
+
+    if (bTime !== aTime) return bTime - aTime;
+
+    const aId = Number(a?.id);
+    const bId = Number(b?.id);
+
+    if (Number.isFinite(aId) && Number.isFinite(bId)) {
+      return bId - aId;
+    }
+
+    return String(b?.id || "").localeCompare(String(a?.id || ""));
+  });
 }
+
 
 
 function UserProfileLoadingSkeleton() {
@@ -389,9 +380,11 @@ export default function UserProfilePage() {
     const routeUsername = String(profileUser?.username || username || "").trim().toLowerCase();
     const viewerUsername = String(currentUser?.username || "").trim().toLowerCase();
     return Boolean(routeUsername) && routeUsername === viewerUsername;
+    
   }, [currentUser?.username, profileUser?.username, username]);
 
   const hasMore = posts.length < total;
+  const safeStats = useMemo(() => normalizeProfileStats(stats), [stats]);
 
   useEffect(() => {
     postsLengthRef.current = posts.length;
@@ -438,7 +431,7 @@ export default function UserProfilePage() {
         setProfileUser(data?.user ?? null);
         setStats(data?.stats ?? DEFAULT_PROFILE_STATS);
         setTotal(Number.isFinite(Number(data?.total)) ? Number(data.total) : 0);
-        setPosts((prev) => (append ? mergeUniquePostsById(prev, nextPosts) : nextPosts));
+        setPosts((prev) => (append ? mergeUniquePostsById(prev, nextPosts) : mergeUniquePostsById([], nextPosts)));
         setCurrentPage(pageToLoad);
         setStatus("ready");
       } catch (err) {
@@ -531,9 +524,9 @@ export default function UserProfilePage() {
   return (
     <div className="min-h-full bg-slate-100">
       <div className="mx-auto max-w-7xl px-4 py-5 lg:px-6 lg:py-6">
-        <UserProfileHero user={profileUser} isSelf={isSelf} stats={stats} />
+        <UserProfileHero user={profileUser} isSelf={isSelf} stats={safeStats} />
 
-        <ProfileOverviewCards stats={stats} />
+        <ProfileOverviewCards stats={safeStats} />
 
         <section className="mt-8">
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
