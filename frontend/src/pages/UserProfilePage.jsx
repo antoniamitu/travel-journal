@@ -121,7 +121,7 @@ function UserProfileLoadingSkeleton() {
     <div className="min-h-full bg-slate-100">
       <div className="mx-auto max-w-7xl px-4 py-5 lg:px-6 lg:py-6">
         <div className="animate-pulse overflow-hidden rounded-[32px] bg-white px-6 py-8 shadow-sm lg:px-8 lg:py-10">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center">
             <div className="flex items-center gap-5">
               <div className="h-24 w-24 rounded-full bg-slate-100" />
               <div>
@@ -129,7 +129,6 @@ function UserProfileLoadingSkeleton() {
                 <div className="mt-3 h-5 w-40 rounded-xl bg-slate-100" />
               </div>
             </div>
-            <div className="h-24 w-full max-w-sm rounded-[24px] bg-slate-100" />
           </div>
         </div>
 
@@ -210,7 +209,7 @@ function UserProfileHero({ user, isSelf, stats }) {
   return (
     <section className="overflow-hidden rounded-[32px] bg-gradient-to-r from-sky-600 via-cyan-600 to-emerald-600 shadow-sm">
       <div className="px-6 py-8 text-white lg:px-8 lg:py-10">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center">
           <div className="flex min-w-0 items-center gap-5">
             <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full border-4 border-white/80 bg-white/20 text-2xl font-bold shadow-sm backdrop-blur">
               {initials}
@@ -233,26 +232,6 @@ function UserProfileHero({ user, isSelf, stats }) {
                 ) : null}
               </div>
             </div>
-          </div>
-
-          <div className="max-w-md rounded-[24px] border border-white/15 bg-white/10 p-4 backdrop-blur">
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-white/80">
-              Profile view
-            </div>
-            <div className="mt-3 text-sm leading-6 text-white/90">
-              Browse visible memories from this traveler. Private posts appear only when you are
-              viewing your own username page.
-            </div>
-            {isSelf ? (
-              <div className="mt-4">
-                <Link
-                  to="/profile"
-                  className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-white/25 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20"
-                >
-                  Open account settings
-                </Link>
-              </div>
-            ) : null}
           </div>
         </div>
       </div>

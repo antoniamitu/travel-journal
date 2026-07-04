@@ -17,7 +17,7 @@ import {
 } from "recharts";
 import { getMyDashboard } from "../api/dashboard.js";
 import { getPlaceCategoryUi } from "../utils/placeCategoryUi.js";
-import { formatFullDate, formatMemberSince } from "../utils/dateFormat.js";
+import { formatMemberSince } from "../utils/dateFormat.js";
 
 const SENTIMENT_META = {
   positive: {
@@ -52,99 +52,11 @@ function asSafeNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-
-function getDominantItem(items, labelKey = "label") {
-  const safeItems = Array.isArray(items) ? items : [];
-  const sorted = safeItems
-    .filter((item) => asSafeNumber(item?.count) > 0)
-    .slice()
-    .sort((a, b) => {
-      const diff = asSafeNumber(b.count) - asSafeNumber(a.count);
-      if (diff !== 0) return diff;
-      return String(a?.[labelKey] || "").localeCompare(String(b?.[labelKey] || ""));
-    });
-
-  return sorted[0] || null;
-}
-
 function getTotalCount(items) {
   return (Array.isArray(items) ? items : []).reduce(
     (sum, item) => sum + asSafeNumber(item?.count),
     0
   );
-}
-
-function buildSentimentInsight(sentimentBreakdown) {
-  const total = getTotalCount(sentimentBreakdown);
-  if (total <= 0) {
-    return "Create posts to reveal your emotional travel pattern.";
-  }
-
-  const dominant = getDominantItem(sentimentBreakdown);
-  if (!dominant) {
-    return "Your sentiment pattern will appear once you add more travel memories.";
-  }
-
-  const pct = Math.round((asSafeNumber(dominant.count) / total) * 100);
-  const sentiment = String(dominant.sentiment || "").toLowerCase();
-
-  if (sentiment === "positive") {
-    return `${pct}% of your memories are positive, suggesting your journal is mostly built around enjoyable travel moments.`;
-  }
-
-  if (sentiment === "negative") {
-    return `${pct}% of your memories are negative, highlighting destinations or experiences that stood out as difficult.`;
-  }
-
-  return `${pct}% of your memories are neutral, suggesting balanced and descriptive travel notes.`;
-}
-
-function buildTravelPattern({ categoryBreakdown, sentimentBreakdown, activityTimeline, topCountries, postingGap }) {
-  const dominantCategory = getDominantItem(categoryBreakdown);
-  const dominantSentiment = getDominantItem(sentimentBreakdown);
-  const mostActiveMonth = getDominantItem(activityTimeline);
-  const topCountry = Array.isArray(topCountries) && topCountries.length > 0 ? topCountries[0] : null;
-
-  const parts = [];
-
-  if (dominantCategory) {
-        const categoryLabel = String(dominantCategory.label || "").trim();
-
-        if (String(dominantCategory.category || "").toLowerCase() === "other") {
-            parts.push("Your memories cover a varied mix of place types");
-        } else {
-            parts.push(`You mostly post about ${categoryLabel.toLowerCase()} places`);
-        }
-    }
-
-  if (dominantSentiment) {
-    parts.push(`with a predominantly ${String(dominantSentiment.label || "").toLowerCase()} sentiment`);
-  }
-
-  if (mostActiveMonth) {
-    parts.push(`and your most active posting month was ${mostActiveMonth.label}`);
-  }
-
-  let mainText = parts.length > 0
-    ? `${parts.join(", ")}.`
-    : "Create more posts to reveal a richer travel pattern.";
-
-  if (topCountry?.country) {
-    mainText += ` Your strongest destination cluster is ${topCountry.country}.`;
-  }
-
-  let gapText = "Create at least two posts on different days to reveal your longest posting break.";
-
-  if (postingGap) {
-    gapText = `Your longest break from posting was ${postingGap.longestGapDays} day${
-      postingGap.longestGapDays === 1 ? "" : "s"
-    }, between ${formatFullDate(postingGap.from)} and ${formatFullDate(postingGap.to)}.`;
-  }
-
-  return {
-    mainText,
-    gapText
-  };
 }
 
 function ChartTooltip({ active, payload, label }) {
@@ -182,8 +94,7 @@ function DashboardLoadingSkeleton() {
           <div className="h-[380px] rounded-[30px] bg-white" />
         </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-3">
-          <div className="h-[300px] rounded-[30px] bg-white" />
+        <div className="mt-6 grid gap-6 lg:grid-cols-2">
           <div className="h-[300px] rounded-[30px] bg-white" />
           <div className="h-[300px] rounded-[30px] bg-white" />
         </div>
@@ -352,7 +263,6 @@ function ActivityTimelineCard({ data }) {
 function SentimentBreakdownCard({ data }) {
   const total = getTotalCount(data);
   const chartData = (Array.isArray(data) ? data : []).filter((item) => asSafeNumber(item.count) > 0);
-  const insight = buildSentimentInsight(data);
 
   return (
     <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm lg:p-6">
@@ -414,10 +324,6 @@ function SentimentBreakdownCard({ data }) {
             </div>
           );
         })}
-      </div>
-
-      <div className="mt-5 rounded-[22px] border border-violet-100 bg-violet-50 px-4 py-3 text-sm font-semibold leading-6 text-violet-900">
-        {insight}
       </div>
     </section>
   );
@@ -575,17 +481,6 @@ function PhotoVerificationCard({ value }) {
           );
         })}
       </div>
-
-      {mismatch > 0 ? (
-        <div className="mt-5 rounded-[20px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700">
-          {mismatch} saved {mismatch === 1 ? "post has" : "posts have"} a mismatch status. This is counted
-          defensively, although the normal posting flow blocks mismatch cases.
-        </div>
-      ) : (
-        <div className="mt-5 rounded-[20px] border border-cyan-100 bg-cyan-50 px-4 py-3 text-sm font-semibold leading-6 text-cyan-900">
-          Mismatch cases are not emphasized because the final posting flow treats them as blocking checks.
-        </div>
-      )}
     </section>
   );
 }
@@ -636,38 +531,6 @@ function RankingCard({ title, subtitle, items, itemKey, emptyText }) {
             {emptyText}
           </div>
         )}
-      </div>
-    </section>
-  );
-}
-
-function TravelPatternCard({ dashboard }) {
-  const pattern = buildTravelPattern({
-    categoryBreakdown: dashboard.categoryBreakdown,
-    sentimentBreakdown: dashboard.sentimentBreakdown,
-    activityTimeline: dashboard.activityTimeline,
-    topCountries: dashboard.topCountries,
-    postingGap: dashboard.postingGap
-  });
-
-  return (
-    <section className="rounded-[30px] border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-cyan-50 p-5 shadow-sm lg:p-6">
-      <div className="text-sm font-bold uppercase tracking-[0.16em] text-violet-600">
-        Behavioral insight
-      </div>
-
-      <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">
-        Your travel pattern
-      </h2>
-
-      <div className="mt-5 rounded-[24px] border border-white/80 bg-white/80 px-4 py-4 shadow-sm">
-        <div className="text-sm font-bold text-slate-900">Pattern summary</div>
-        <p className="mt-2 text-sm leading-7 text-slate-700">{pattern.mainText}</p>
-      </div>
-
-      <div className="mt-4 rounded-[24px] border border-white/80 bg-white/80 px-4 py-4 shadow-sm">
-        <div className="text-sm font-bold text-slate-900">Posting rhythm</div>
-        <p className="mt-2 text-sm leading-7 text-slate-700">{pattern.gapText}</p>
       </div>
     </section>
   );
@@ -763,7 +626,7 @@ export default function DashboardPage() {
               <PhotoVerificationCard value={dashboard.photoVerification} />
             </div>
 
-            <div className="mt-6 grid gap-6 lg:grid-cols-3">
+            <div className="mt-6 grid gap-6 lg:grid-cols-2">
               <RankingCard
                 title="Top countries"
                 subtitle="Countries ranked by how many memories you posted there."
@@ -779,8 +642,6 @@ export default function DashboardPage() {
                 itemKey="city"
                 emptyText="City rankings will appear after your posts include city data."
               />
-
-              <TravelPatternCard dashboard={dashboard} />
             </div>
           </>
         )}
