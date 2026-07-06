@@ -56,7 +56,6 @@ export default function PostImagePicker({
   disabledReason = ""
 }) {
   const galleryInputRef = useRef(null);
-  const cameraInputRef = useRef(null);
 
   const safeItems = Array.isArray(items) ? items.filter(Boolean) : [];
   const count = safeItems.length;
@@ -65,11 +64,6 @@ export default function PostImagePicker({
   function openGalleryPicker() {
     if (disabled || !canAddMore) return;
     galleryInputRef.current?.click();
-  }
-
-  function openCameraPicker() {
-    if (disabled || !canAddMore) return;
-    cameraInputRef.current?.click();
   }
 
   function handleFilesChange(fileList) {
@@ -106,46 +100,19 @@ export default function PostImagePicker({
         }}
       />
 
-      <input
-        ref={cameraInputRef}
-        type="file"
-        hidden
-        accept={ACCEPT_ATTR}
-        capture="environment"
-        disabled={disabled}
-        onChange={(e) => {
-          handleFilesChange(e.target.files);
-          e.target.value = "";
-        }}
-      />
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 flex justify-center">
         <button
           type="button"
           disabled={disabled || !canAddMore}
           onClick={openGalleryPicker}
           className={[
-            "inline-flex min-h-11 items-center justify-center rounded-2xl border px-4 py-3 text-sm font-semibold transition",
+            "inline-flex min-h-11 w-full max-w-sm items-center justify-center rounded-2xl border px-4 py-3 text-sm font-semibold transition",
             disabled || !canAddMore
               ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
               : "border-slate-200 bg-white text-slate-700 hover:border-emerald-400 hover:text-emerald-700"
           ].join(" ")}
         >
           🖼️ Add from gallery
-        </button>
-
-        <button
-          type="button"
-          disabled={disabled || !canAddMore}
-          onClick={openCameraPicker}
-          className={[
-            "inline-flex min-h-11 items-center justify-center rounded-2xl border px-4 py-3 text-sm font-semibold transition",
-            disabled || !canAddMore
-              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-              : "border-slate-200 bg-white text-slate-700 hover:border-cyan-400 hover:text-cyan-700"
-          ].join(" ")}
-        >
-          📷 Use camera
         </button>
       </div>
 
