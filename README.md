@@ -12,7 +12,7 @@ The main technical focus is not simply CRUD functionality, but **geospatial data
 
 ## Screenshots
 
-### Photo-location verification — matched result
+### Photo-location verification - matched result
 
 Google Cloud Vision detects a landmark candidate, while the application evaluates confidence and geographic distance before suggesting it to the user.
 
@@ -20,7 +20,7 @@ Google Cloud Vision detects a landmark candidate, while the application evaluate
   <img src="photo-location-match.png" alt="Photo-location match showing Colosseo at 81 percent confidence and a 14 metre distance" width="650">
 </p>
 
-### Photo-location verification — mismatch handling
+### Photo-location verification - mismatch handling
 
 A high-confidence landmark that is far from the selected location is treated as a mismatch. The application explains the result and asks the user to correct the location or replace the image instead of silently accepting inconsistent data.
 
