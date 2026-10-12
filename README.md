@@ -245,7 +245,7 @@ JWT_SECRET=...
 NOMINATIM_USER_AGENT=...
 ```
 
-You will also need to provide the Cloudinary, Gemini, and — when enabled — Google Cloud Vision credentials referenced by the backend configuration.
+You will also need to provide the Cloudinary, Gemini, and - when enabled - Google Cloud Vision credentials referenced by the backend configuration.
 
 ### Install and start
 
